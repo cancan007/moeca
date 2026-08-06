@@ -1,0 +1,5 @@
+[tools]
+go = "1.25"
+node = "22"
+pnpm = "latest"
+rust = "stable"

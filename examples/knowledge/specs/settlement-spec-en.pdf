@@ -1,0 +1,78 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Length 743 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+56 740 Td
+(SETTLEMENT SPECIFICATION v2.3) Tj T*
+() Tj T*
+(1. Scope) Tj T*
+(This document defines how an authorized payment becomes a ledger entry.) Tj T*
+(It covers capture, webhook handling and correction rows.) Tj T*
+() Tj T*
+(2. Capture) Tj T*
+(A capture request may settle less than the authorized amount but never more.) Tj T*
+(A capture above the authorized amount is rejected with 422.) Tj T*
+(Authorization expires after 7 days; a capture after that returns 422.) Tj T*
+() Tj T*
+(3. Idempotency) Tj T*
+(Every settlement carries the payment idempotency key.) Tj T*
+(The ledger enforces uniqueness on that key with a database constraint,) Tj T*
+(not with an application-level check. See incident 2026-03-12.) Tj T*
+ET
+endstream
+endobj
+7 0 obj
+<< /Length 635 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+56 740 Td
+(4. Webhook handling) Tj T*
+(The PSP retries webhooks until it receives a 2xx. Retries are expected) Tj T*
+(and are not an error condition. The worker must be safe to run twice.) Tj T*
+() Tj T*
+(5. Correction rows) Tj T*
+(The ledger is append-only. A wrong entry is corrected by appending a row) Tj T*
+(with the opposite sign, never by updating or deleting the original.) Tj T*
+(The daily total must match after every correction batch.) Tj T*
+() Tj T*
+(6. Amounts) Tj T*
+(All amounts are integers in the smallest currency unit.) Tj T*
+(Floating point is not used anywhere in the settlement path.) Tj T*
+ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000373 00000 n 
+0000000470 00000 n 
+0000001263 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1948
+%%EOF

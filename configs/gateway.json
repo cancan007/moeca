@@ -1,0 +1,211 @@
+{
+  "listen": "0.0.0.0:8787",
+  "maxBodyBytes": 8388608,
+  "requestTimeoutSec": 300,
+  "sessions": {
+    "dev-session-token": {
+      "id": "dev",
+      "label": "local development"
+    }
+  },
+  "services": {
+    "anthropic": {
+      "kind": "model",
+      "models": [
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "claude-haiku-4-5-20251001",
+        "claude-fable-5"
+      ],
+      "prefix": "/anthropic/",
+      "upstream": "https://api.anthropic.com",
+      "allowlist": [
+        "api.anthropic.com"
+      ],
+      "injectHeaders": {
+        "x-api-key": "${SECRET}",
+        "anthropic-version": "2023-06-01"
+      },
+      "stripHeaders": [
+        "Authorization"
+      ],
+      "rateLimit": {
+        "rps": 5,
+        "burst": 10
+      },
+      "budget": {
+        "maxTokensPerSession": 2000000
+      }
+    },
+    "openai": {
+      "kind": "model",
+      "models": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "o3",
+        "o4-mini"
+      ],
+      "prefix": "/openai/",
+      "upstream": "https://api.openai.com",
+      "allowlist": [
+        "api.openai.com"
+      ],
+      "injectHeaders": {
+        "Authorization": "Bearer ${SECRET}"
+      },
+      "rateLimit": {
+        "rps": 5,
+        "burst": 10
+      },
+      "budget": {
+        "maxTokensPerSession": 2000000
+      }
+    },
+    "gemini": {
+      "kind": "model",
+      "models": [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash"
+      ],
+      "prefix": "/gemini/",
+      "upstream": "https://generativelanguage.googleapis.com",
+      "allowlist": [
+        "generativelanguage.googleapis.com"
+      ],
+      "injectHeaders": {
+        "x-goog-api-key": "${SECRET}"
+      },
+      "rateLimit": {
+        "rps": 5,
+        "burst": 10
+      },
+      "budget": {
+        "maxTokensPerSession": 2000000
+      }
+    },
+    "github": {
+      "kind": "tool",
+      "prefix": "/github/",
+      "upstream": "https://api.github.com",
+      "allowlist": [
+        "api.github.com"
+      ],
+      "injectHeaders": {
+        "Authorization": "Bearer ${SECRET}",
+        "Accept": "application/vnd.github+json"
+      },
+      "protectedBranches": [
+        "main",
+        "master",
+        "develop"
+      ],
+      "writeAllow": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/repos/*/*/pulls"
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/repos/*/*/git/refs"
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/repos/*/*/issues/*/comments"
+        }
+      ],
+      "rateLimit": {
+        "rps": 10,
+        "burst": 20
+      },
+      "budget": {
+        "maxTokensPerSession": 0
+      }
+    },
+    "jira": {
+      "kind": "tool",
+      "prefix": "/jira/",
+      "upstream": "https://your-domain.atlassian.net",
+      "allowlist": [
+        "your-domain.atlassian.net"
+      ],
+      "injectHeaders": {
+        "Authorization": "Basic ${SECRET}",
+        "Accept": "application/json"
+      },
+      "rateLimit": { "rps": 5, "burst": 10 },
+      "budget": { "maxTokensPerSession": 0 }
+    },
+    "trello": {
+      "kind": "tool",
+      "prefix": "/trello/",
+      "upstream": "https://api.trello.com",
+      "allowlist": [
+        "api.trello.com"
+      ],
+      "injectHeaders": {
+        "Authorization": "${SECRET}"
+      },
+      "rateLimit": { "rps": 5, "burst": 10 },
+      "budget": { "maxTokensPerSession": 0 }
+    },
+    "notion": {
+      "kind": "tool",
+      "prefix": "/notion/",
+      "upstream": "https://api.notion.com",
+      "allowlist": [
+        "api.notion.com"
+      ],
+      "injectHeaders": {
+        "Authorization": "Bearer ${SECRET}",
+        "Notion-Version": "2022-06-28"
+      },
+      "rateLimit": { "rps": 5, "burst": 10 },
+      "budget": { "maxTokensPerSession": 0 }
+    },
+    "fetch": {
+      "kind": "tool",
+      "prefix": "/fetch/",
+      "upstream": "",
+      "allowlist": [
+        ".githubusercontent.com",
+        "registry.npmjs.org",
+        "pypi.org"
+      ],
+      "rateLimit": {
+        "rps": 8,
+        "burst": 16
+      },
+      "budget": {
+        "maxTokensPerSession": 0
+      }
+    },
+    "rag": {
+      "kind": "tool",
+      "prefix": "/rag/",
+      "upstream": "http://orchestra-rag:8790",
+      "allowlist": [
+        "orchestra-rag"
+      ],
+      "allowPaths": [
+        "/search"
+      ],
+      "rateLimit": {
+        "rps": 10,
+        "burst": 20
+      },
+      "budget": {
+        "maxTokensPerSession": 0
+      }
+    }
+  },
+  "deny": [
+    { "scope": "network", "pattern": "169.254.169.254", "note": "クラウドメタデータエンドポイント" },
+    { "scope": "command", "pattern": "/repos/*/*", "methods": ["DELETE"], "note": "リポジトリ削除の禁止" }
+  ]
+}

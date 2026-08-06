@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/*
+ * ── Orchestra design tokens ──────────────────────────────────────────────
+ * Ported verbatim from the Orchestra.dc.html design (dark + light themes).
+ * Components reference these via var(--token); switching #app-root[data-theme]
+ * reskins the entire app. The fixed brand/status hues live in :root.
+ */
+
+@layer base {
+  :root {
+    /* Fixed brand + status hues (constant across themes) */
+    --ac: #4f9dff;          /* accent / working */
+    --cyan: #34d3e0;
+    --amber: #e0a83e;       /* inbox / 起票 */
+    --blue: #4f9dff;        /* working / 判断待ち */
+    --green: #3fbf8f;       /* done / isolated / add */
+    --red: #e06a6a;         /* delete */
+    --purple: #b08ad9;
+    --notif: #e0654e;
+
+    --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  #app-root[data-theme="dark"] {
+    --tx: #e6e9ef; --tx2: #c3cad6; --txb: #cdd3dd; --tx3: #9aa3b2; --tx-done: #aeb6c2;
+    --tx-mut: #8b93a3; --tx-dim: #5b626f; --tx-faint: #4a515d; --tx-gutter: #3a4150; --tx-navoff: #79818f;
+    --bg-app: #0f1115; --bg-panel: #0d0f13; --bg-deep: #0b0d11; --bg-card: #13151a; --bg-card2: #15181f;
+    --bg-inset: #0c1116; --bg-inset2: #0f1418; --bg-thumb: #101620; --bg-tab: #1a1f28; --bg-done: #11160f;
+    --bd: #1d2129; --bd2: #242a34; --bd3: #1a222b; --bd-soft: #1a1e25; --bd4: #1f2a33; --bd-done: #1f2a1d;
+    --bd-sep: #2a313c; --bd-tree: #1d2533;
+    --tint-active: #13202e; --tint-blue: #101b29; --tint-green: #0f1d18; --tint-green-bd: #1d362b;
+    --tint-active-bd: #2b3d55; --tint-blue-bd: #1b3047; --tint-accent: #102031; --tint-red: #1c1214;
+    --tint-red-bd: #3a1f22; --tint-amber: #1a1410; --tint-purple: #1a1322; --skel: #1f2733;
+    --avatar-mut: #3a4658; --diff-hunk: #0c141c; --diff-add-bg: #0f231a; --diff-del-bg: #231012;
+  }
+
+  #app-root[data-theme="light"] {
+    --tx: #1b2331; --tx2: #36414f; --txb: #2b3744; --tx3: #5a6573; --tx-done: #69727f;
+    --tx-mut: #6c7682; --tx-dim: #6e7785; --tx-faint: #9aa2ad; --tx-gutter: #aeb5bf; --tx-navoff: #6f7785;
+    --bg-app: #f4f6f9; --bg-panel: #ffffff; --bg-deep: #eaedf2; --bg-card: #ffffff; --bg-card2: #f8fafc;
+    --bg-inset: #f0f3f7; --bg-inset2: #f3f5f9; --bg-thumb: #eef2f7; --bg-tab: #e9edf3; --bg-done: #eef3ea;
+    --bd: #e4e8ee; --bd2: #dce1e9; --bd3: #e7ebf0; --bd-soft: #edf0f4; --bd4: #e1e6ed; --bd-done: #d8e3d0;
+    --bd-sep: #c6ccd5; --bd-tree: #dde3eb;
+    --tint-active: #e7f0fb; --tint-blue: #e8f1fd; --tint-green: #e6f5ec; --tint-green-bd: #c6e4d4;
+    --tint-active-bd: #bcd6f2; --tint-blue-bd: #c8ddf5; --tint-accent: #e3edfc; --tint-red: #fbeaea;
+    --tint-red-bd: #f1ced0; --tint-amber: #f6eedd; --tint-purple: #eee6f6; --skel: #e3e8ef;
+    --avatar-mut: #c6ccd6; --diff-hunk: #eef3f8; --diff-add-bg: #e3f6ea; --diff-del-bg: #fbe9e9;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body, #root { height: 100%; margin: 0; }
+
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    background: #0b0d11;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: #2a313c; border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  #app-root[data-theme="light"] ::-webkit-scrollbar-thumb { background: #cfd6df; }
+}
+
+@keyframes ocPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(63, 191, 143, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(63, 191, 143, 0); }
+}
+@keyframes ocBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes ocSpin { to { transform: rotate(360deg); } }
+
+.oc-active-dot { animation: ocPulse 1.6s ease-out infinite; }
+.oc-caret { animation: ocBlink 1.1s step-end infinite; }
+.oc-spin { animation: ocSpin 0.9s linear infinite; }
+
+.mono { font-family: var(--font-mono); }
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}

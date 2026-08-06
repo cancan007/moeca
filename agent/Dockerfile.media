@@ -1,0 +1,53 @@
+# Orchestra media sandbox image — the "media" policy.
+#
+# Build:  docker build -f Dockerfile.media -t orchestra/agent-media:latest .
+#
+# Daily produces video, image and audio artifacts, which means running ffmpeg
+# and ImageMagick over files an agent (or an external ticket) supplied. Those
+# libraries parse untrusted, attacker-shaped binary input and have the CVE
+# history to prove it — which is exactly why they are NOT in the common image.
+# Putting them in every sandbox would widen the attack surface of every agent to
+# cover a decade of media-parser bugs; putting them here confines it to the
+# stages that actually transcode.
+#
+# The confinement is stronger than the default sandbox, not weaker. The image
+# policy runs this container with `--network none`: a transcode has no reason to
+# reach anything, not even the gateway, so a parser bug has nowhere to call out
+# to. Combined with the read-only root, dropped capabilities and the
+# worktree-only mount, a compromised ffmpeg can corrupt the files it was pointed
+# at and nothing else.
+#
+# There is no agent binary here on purpose: a networkless container cannot reach
+# a model. A media stage is a command stage — it carries an explicit `cmd`.
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ffmpeg imagemagick libvips-tools \
+ && rm -rf /var/lib/apt/lists/*
+
+# Disable the ImageMagick coders that read or write arbitrary paths and URLs.
+# With `--network none` and only /work mounted these are already largely inert,
+# but MSL/MVG are file-system primitives rather than image formats and nothing
+# legitimate in a transcode pipeline needs them.
+RUN printf '%s\n' \
+  '<policymap>' \
+  '  <policy domain="coder" rights="none" pattern="MSL" />' \
+  '  <policy domain="coder" rights="none" pattern="MVG" />' \
+  '  <policy domain="coder" rights="none" pattern="URL" />' \
+  '  <policy domain="coder" rights="none" pattern="HTTPS" />' \
+  '  <policy domain="coder" rights="none" pattern="HTTP" />' \
+  '  <policy domain="coder" rights="none" pattern="FTP" />' \
+  '  <policy domain="coder" rights="none" pattern="EPHEMERAL" />' \
+  '  <policy domain="delegate" rights="none" pattern="*" />' \
+  '</policymap>' \
+  > /etc/ImageMagick-6/policy.xml
+
+ENV XDG_CACHE_HOME=/cache/xdg \
+    TMPDIR=/tmp
+
+WORKDIR /work
+# A media stage always supplies its own command; failing loudly beats a
+# container that exits 0 having done nothing.
+CMD ["bash", "-lc", "echo 'orchestra media runtime: this image expects an explicit stage command (e.g. ffmpeg ...)' >&2; exit 64"]

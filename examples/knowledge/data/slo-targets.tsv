@@ -1,0 +1,9 @@
+サービス	指標	目標	計測窓	現在値	備考
+payment-api	可用性	99.95%	30日	99.97%	与信確保までの同期経路
+payment-api	p99レイテンシ	800ms	7日	640ms	PSP呼び出しを含む
+settlement-worker	確定までの遅延	5分	30日	2分18秒	webhook受信からの中央値
+ledger	整合性	100%	日次	100%	日次合計の一致率。SEV2の閾値
+inventory-api	可用性	99.9%	30日	99.93%	
+inventory-api	引当の応答時間	200ms	7日	118ms	
+stock-sync	同期の鮮度	15分	日次	14分	倉庫システムとのずれの上限
+stock-sync	安全在庫の充足率	98%	30日	96.4%	目標未達。SKU単位で見直し中

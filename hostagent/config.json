@@ -1,0 +1,17 @@
+{
+  "listen": "127.0.0.1:8788",
+  "repos": [
+    {
+      "name": "web-app",
+      "path": "/Users/you/dev/acme/web-app",
+      "target": "main",
+      "ciCommand": ["pnpm", "-s", "ci"]
+    },
+    {
+      "name": "api",
+      "path": "/Users/you/dev/acme/api",
+      "target": "main",
+      "ciCommand": ["make", "ci"]
+    }
+  ]
+}

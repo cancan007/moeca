@@ -1,0 +1,93 @@
+# Orchestra polyglot sandbox image — the "poly" policy.
+#
+# The base image is distroless: no shell, no toolchain. That is right for an
+# agent that only edits files, and useless for a stage that has to build, test
+# or debug what it edited. This image adds Node, Python and Go plus a shell, so
+# a stage can carry a `cmd` like `bash -lc "npm ci && npm test"`.
+#
+# Build:  docker build -f Dockerfile.poly -t orchestra/agent-poly:latest .
+#
+# Two design points worth keeping:
+#
+#   1. Every cache is redirected under /cache. The sandbox runs with a read-only
+#      root filesystem, so a toolchain that writes to its default cache location
+#      simply fails. Pointing them all at one directory means the image policy
+#      needs exactly one extra tmpfs mount (see configs/sandbox.json) instead of
+#      a different list per language.
+#
+#   2. Those caches are tmpfs — RAM-backed and gone when the container exits.
+#      That is deliberate: the sandbox stays disposable, and the durable
+#      dependency cache lives in the registry proxy instead, where a sandbox can
+#      only read it. A cache volume shared between tasks would let one task
+#      plant bytes another task later executes.
+#
+# Nothing here weakens isolation: the same read-only root, dropped capabilities
+# and egress-only network apply to this image as to any other. It carries no
+# credentials, and package installs resolve through the registry proxy because
+# the controller forces NPM_CONFIG_REGISTRY / PIP_INDEX_URL / GOPROXY.
+
+# --- build stage: the agent binary, so a poly stage can also run as an agent ---
+FROM golang:1.25 AS build
+WORKDIR /src
+COPY go.mod ./
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /agent .
+
+# --- toolchain sources -------------------------------------------------------
+FROM node:22-bookworm-slim AS node
+FROM golang:1.25-bookworm AS golang
+
+# --- final stage -------------------------------------------------------------
+FROM debian:bookworm-slim
+
+# ca-certificates is needed even though the sandbox talks plain HTTP to the
+# proxy: TLS verification still matters for anything a build script fetches
+# through a tool that speaks HTTPS to the gateway.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates git curl xz-utils \
+      python3 python3-pip python3-venv \
+      build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node 22 and Go 1.25, copied from their official images rather than installed
+# from Debian's (much older) packages.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+COPY --from=golang /usr/local/go /usr/local/go
+
+COPY --from=build /agent /agent
+
+ENV PATH="/usr/local/go/bin:/usr/local/bin:${PATH}"
+
+# A stage command is idiomatically `bash -lc "…"`, and a LOGIN shell sources
+# /etc/profile, which OVERWRITES PATH and loses everything ENV set above — Go
+# lives outside the default PATH, so `go build` would fail with a bare "command
+# not found". Publish the additions as a profile drop-in (login shells) and
+# symlink the binaries into /usr/local/bin (everything else), so the toolchain is
+# on PATH however the stage invokes it.
+RUN printf 'export PATH="/usr/local/go/bin:/usr/local/bin:$PATH"\n' > /etc/profile.d/orchestra-path.sh \
+ && ln -sf /usr/local/go/bin/go     /usr/local/bin/go \
+ && ln -sf /usr/local/go/bin/gofmt  /usr/local/bin/gofmt
+
+# Every toolchain cache under one writable root (mounted as tmpfs by the image
+# policy). Without this the read-only root fs breaks the first `npm install`.
+ENV NPM_CONFIG_CACHE=/cache/npm \
+    NPM_CONFIG_USERCONFIG=/cache/npmrc \
+    PIP_CACHE_DIR=/cache/pip \
+    XDG_CACHE_HOME=/cache/xdg \
+    GOPATH=/cache/go \
+    GOMODCACHE=/cache/go/pkg/mod \
+    GOCACHE=/cache/go/build \
+    TMPDIR=/tmp
+
+# Debian marks its Python as externally managed (PEP 668). In a disposable
+# container with a tmpfs cache there is no system to protect, and refusing
+# `pip install` would make the image pointless for a Python stage.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+
+WORKDIR /work
+# See the base image: CMD, not ENTRYPOINT, so a stage's `cmd` replaces it.
+CMD ["/agent"]

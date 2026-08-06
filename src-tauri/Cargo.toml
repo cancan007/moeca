@@ -1,0 +1,36 @@
+[package]
+name = "orchestra"
+version = "0.1.0"
+description = "Secure multi-agent task management desktop tool"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "orchestra_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Native folder picker for choosing a Delivery repository path in Settings.
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Provider secret at-rest (OS keychain), gateway admin API calls, admin-token gen.
+# apple-native compiles the macOS Keychain backend (security-framework). Without
+# a platform feature, keyring v3 silently falls back to an in-memory mock that
+# never persists — credentials would vanish on the next read.
+keyring = { version = "3", features = ["apple-native"] }
+ureq = { version = "2", features = ["json"] }
+sha2 = "0.10"
+rand = "0.8"
+hex = "0.4"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

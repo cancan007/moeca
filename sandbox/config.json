@@ -1,0 +1,16 @@
+{
+  "listen": "127.0.0.1:8789",
+  "image": "orchestra/agent:latest",
+  "egressNetwork": "orchestra-egress",
+  "relaxedNetwork": "orchestra-relaxed",
+  "gatewayStrictBase": "http://orchestra-gateway:8787",
+  "memoryMB": 2048,
+  "cpus": 2,
+  "pidsLimit": 512,
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://host.docker.internal:8787/anthropic",
+    "GITHUB_API_URL": "http://host.docker.internal:8787/github",
+    "ORCHESTRA_GATEWAY": "http://host.docker.internal:8787"
+  },
+  "sessionToken": "dev-session-token"
+}

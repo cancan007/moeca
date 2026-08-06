@@ -1,0 +1,8 @@
+{
+  "listen": "127.0.0.1:8788",
+  "repos": [],
+  "gateway": {
+    "url": "http://127.0.0.1:8787",
+    "session": "dev-session-token"
+  }
+}

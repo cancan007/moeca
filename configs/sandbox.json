@@ -1,0 +1,51 @@
+{
+  "listen": "127.0.0.1:8789",
+  "image": "orchestra/agent:latest",
+  "images": [
+    {
+      "name": "base",
+      "ref": "orchestra/agent:latest",
+      "description": "エージェント既定。distroless・シェルもツールチェーンも無し。",
+      "unattended": true
+    },
+    {
+      "name": "poly",
+      "ref": "orchestra/agent-poly:latest",
+      "description": "Node 22 / Python 3 / Go 1.25 + シェル。ビルド・テスト・デバッグのコマンドステージ用。",
+      "unattended": true,
+      "memoryMB": 4096,
+      "cpus": 4,
+      "pidsLimit": 1024,
+      "tmpfs": ["/cache", "/root"]
+    },
+    {
+      "name": "media",
+      "ref": "orchestra/agent-media:latest",
+      "description": "ffmpeg / ImageMagick / libvips。信頼できない動画・画像を扱うため network none。",
+      "unattended": true,
+      "network": "none",
+      "memoryMB": 6144,
+      "cpus": 4,
+      "pidsLimit": 1024,
+      "tmpfs": ["/cache", "/root"]
+    }
+  ],
+  "maxMemoryMB": 16384,
+  "maxCPUs": 8,
+  "maxPidsLimit": 4096,
+  "egressNetwork": "orchestra-egress",
+  "relaxedNetwork": "orchestra-relaxed",
+  "gatewayStrictBase": "http://orchestra-gateway:8787",
+  "registryStrictBase": "http://orchestra-registry:8791",
+  "memoryMB": 2048,
+  "cpus": 2,
+  "pidsLimit": 512,
+  "maxDelegateDepth": 1,
+  "denyPaths": ["*.pem", "*.key", "id_rsa", "*.p12", ".env"],
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://host.docker.internal:8787/anthropic",
+    "GITHUB_API_URL": "http://host.docker.internal:8787/github",
+    "ORCHESTRA_GATEWAY": "http://host.docker.internal:8787"
+  },
+  "sessionToken": "dev-session-token"
+}
