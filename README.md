@@ -6,7 +6,7 @@ review their deliverables from sandbox → host, and keep context/token usage op
 Built as a **Tauri + React + TypeScript** desktop app. The UI is a faithful implementation of
 the `Orchestra.dc.html` design (imported into `design/` for reference).
 
-![Secure multi-agent architecture](docs/images/secure-multi-agents-architecture_v2.png)
+![Secure multi-agent architecture](docs/images/secure-multi-agents-architecture_v2_en.png)
 
 The whole design follows from one assumption: **an agent is untrusted code**. So agents run in a
 private network that has no route to the host and no route out, and the only thing they can reach
