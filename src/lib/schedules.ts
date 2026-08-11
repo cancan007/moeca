@@ -17,7 +17,10 @@ export interface Schedule {
   name: string;
   cron: string; // 5-field "m h dom mon dow"
   perspective: SchedulePerspective;
-  task: string;
+  /** Legacy free-text label. Nothing reads it and nothing writes it any more —
+   *  a schedule's composition is its templateRef. Kept only because the host
+   *  agent still stores and returns the column. */
+  task?: string;
   active: boolean;
   lastRun: string; // RFC3339, empty if never
   runCount: number;
@@ -32,7 +35,6 @@ export interface ScheduleSpec {
   name: string;
   cron: string;
   perspective: SchedulePerspective;
-  task: string;
   active?: boolean;
   goal?: string;
   milestones?: Milestone[];

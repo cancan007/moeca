@@ -582,8 +582,6 @@ export const zh: Dict = {
     rebuildFromForm: "按上面的设置重新生成",
     mixedMinutes:
       "由于分钟不一致，{{times}} 将不会被登记。仅当分钟相同时（例如 08:00 与 18:00）多个时刻才能合并。",
-    multiAgent: "多代理构成",
-    defaultIfUnset: "未指定则使用默认",
     execution: "执行",
     recur: {
       sep: "、",

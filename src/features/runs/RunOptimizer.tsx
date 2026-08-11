@@ -70,7 +70,7 @@ export function RunOptimizer({
         const task = sc.goal || sc.name;
         const c = compileRef(sc.templateRef, stores, task);
         await schedulesApi.update(sc.id, {
-          name: sc.name, cron: sc.cron, perspective: sc.perspective, task: sc.task,
+          name: sc.name, cron: sc.cron, perspective: sc.perspective,
           active: sc.active, goal: sc.goal, milestones: sc.milestones,
           templateLabel: c?.label ?? sc.templateLabel, templateRef: sc.templateRef,
           runSpec: c ? buildRunSpec(c.stages, { unattended: true }) : sc.runSpec,

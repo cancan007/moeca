@@ -582,8 +582,6 @@ export const en: Dict = {
     rebuildFromForm: "Rebuild from the settings above",
     mixedMinutes:
       "The minutes do not line up, so {{times}} will not be registered. Several times can only be combined when they share a minute (e.g. 08:00 and 18:00).",
-    multiAgent: "Multi-agent composition",
-    defaultIfUnset: "default if unset",
     execution: "Run",
     recur: {
       sep: ", ",

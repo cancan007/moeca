@@ -585,8 +585,6 @@ export const ja = {
     rebuildFromForm: "上の設定で作り直す",
     mixedMinutes:
       "分がそろっていないため {{times}} は登録されません。複数時刻は分が同じとき（例 08:00 と 18:00）だけまとめられます。",
-    multiAgent: "マルチエージェント構成",
-    defaultIfUnset: "未指定ならデフォルト",
     execution: "実行",
     recur: {
       sep: "・",

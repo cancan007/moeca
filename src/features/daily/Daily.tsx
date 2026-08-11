@@ -251,21 +251,12 @@ const CARD_WAVE = [14, 28, 20, 34, 16, 24];
 const CARD_WAVE_2 = [18, 30, 12, 26, 20];
 const MODAL_WAVE = Array.from({ length: 64 }, (_, i) => 8 + Math.round(Math.abs(Math.sin(i * 0.7) + Math.cos(i * 0.31)) * 60));
 
-// pipeline options for the new-schedule modal
-interface PipeOpt {
-  name: string;
-  steps: string;
-  tag: string;
-  dot: string;
-}
-const draftPipes: PipeOpt[] = [
-  { name: "Scout → Analyst → Writer", steps: "3 steps · 発見系", tag: "RECON", dot: "#d39a4e" },
-  { name: "Tuner → Reviewer", steps: "2 steps · 最適化系", tag: "OPTIMIZE", dot: "#5b9fe8" },
-  { name: "Runner Solo", steps: "1 step · 自動化系", tag: "AUTO", dot: "#5fbf95" },
-  { name: "Researcher → Critic → Editor", steps: "3 steps · 深掘り", tag: "DEEP", dot: "#7c5cff" },
-  { name: "Collector → Summarizer", steps: "2 steps · 集約", tag: "DIGEST", dot: "#34d3e0" },
-  { name: "デフォルト構成", steps: "自動選択", tag: "DEFAULT", dot: "var(--tx-dim)" },
-];
+// A schedule's composition is its bound agent template and nothing else: a
+// single agent is a one-stage template, so multi-agent is already a choice in
+// that same list. The modal used to carry a second "multi-agent composition"
+// picker of hardcoded pipeline names — it compiled to nothing and only ever
+// restored its own radio button, so a Solo could be shown next to a 3-step
+// pipeline that never ran.
 
 // ===========================================================================
 
@@ -457,7 +448,6 @@ export function Daily() {
   const [draftWeeks, setDraftWeeks] = useState<number[]>([]);
   const [draftDows, setDraftDows] = useState<number[]>([]);
   const [draftTimes, setDraftTimes] = useState<string[]>(["08:00"]);
-  const [draftPipe, setDraftPipe] = useState(0);
   const [draftGoal, setDraftGoal] = useState("");
   const [draftMilestones, setDraftMilestones] = useState<string[]>([""]);
   // "" only until the template list resolves; boundTemplateRef falls back to the
@@ -572,7 +562,6 @@ export function Daily() {
     setDraftWeeks([]);
     setDraftDows([]);
     setDraftTimes(["08:00"]);
-    setDraftPipe(0);
     setDraftGoal("");
     setDraftMilestones([""]);
     setDraftTemplateRef("");
@@ -587,7 +576,6 @@ export function Daily() {
     setDraftGoal(sc.goal ?? "");
     setDraftMilestones(sc.milestones?.length ? sc.milestones.map((m) => m.title) : [""]);
     setDraftTemplateRef(sc.templateRef ?? "");
-    setDraftPipe(Math.max(0, draftPipes.findIndex((p) => p.name === sc.task)));
 
     const form = parseCron(sc.cron);
     if (form) {
@@ -638,7 +626,6 @@ export function Daily() {
         name: draftName.trim() || t("daily.untitledSchedule"),
         cron: buildCron(),
         perspective: draftKind,
-        task: draftPipes[draftPipe]?.name ?? "",
         // Editing must not silently re-enable a schedule the user paused; the
         // form has no active field, so the stored value carries through.
         active: existing ? existing.active : true,
@@ -1352,30 +1339,6 @@ export function Daily() {
                   </span>
                 )}
                 <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>cron: {buildCron()}</span>
-              </div>
-
-              {/* pipeline */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ font: "600 11px 'IBM Plex Sans'", color: "var(--tx3)" }}>{t("daily.multiAgent")}</span>
-                  <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("daily.defaultIfUnset")}</span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 188, overflowY: "auto" }}>
-                  {draftPipes.map((p, i) => {
-                    const on = draftPipe === i;
-                    return (
-                      <div key={p.name} onClick={() => setDraftPipe(i)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", borderRadius: 9, cursor: "pointer", background: on ? "var(--tint-active)" : "var(--bg-card2)", border: `1px solid ${on ? "var(--tint-active-bd)" : "var(--bd2)"}` }}>
-                        <div style={{ width: 15, height: 15, borderRadius: "50%", flex: "none", border: `1.5px solid ${on ? "var(--ac)" : "var(--bd2)"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>{on && <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ac)" }} />}</div>
-                        <div style={{ width: 8, height: 8, borderRadius: 2, background: p.dot, flex: "none" }} />
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
-                          <span style={{ font: "600 11.5px 'IBM Plex Sans'", color: "var(--tx)" }}>{p.name}</span>
-                          <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>{p.steps}</span>
-                        </div>
-                        <span style={{ font: "500 8.5px 'IBM Plex Mono'", color: "var(--tx-faint)", background: "var(--bg-card)", border: "1px solid var(--bd2)", padding: "2px 6px", borderRadius: 4 }}>{p.tag}</span>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--bg-inset2)", border: "1px solid var(--bd3)", borderRadius: 8, padding: "10px 12px" }}>
