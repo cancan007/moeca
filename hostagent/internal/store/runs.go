@@ -26,14 +26,38 @@ type ScheduleRun struct {
 	Branch string `json:"branch,omitempty"`
 }
 
-// Occurrence statuses. 'executed' = the schedule fired (and, when a repo is
-// bound, an agent run was launched); 'missed' = its cron passed while the app
-// was down; 'failed' = it fired but launching the agent run errored.
+// Occurrence statuses.
+//
+//	executed — the schedule fired and its run was launched. Recorded the moment
+//	           the run is submitted, so this is the status of a run still going.
+//	missed   — its cron passed while the app was down.
+//	failed   — it could not be launched, or the run itself failed.
+//	done     — the run finished and produced files.
+//	empty    — the run finished, nothing failed, and it produced nothing.
+//
+// The last two exist because 'executed' was previously terminal: it was written
+// at submission and never revisited, so a run that died, or one where every
+// stage exited 0 and wrote nothing at all, both showed as a schedule that had
+// run. "It completed" and "it made something" are different facts and the
+// history has to be able to tell them apart.
 const (
 	RunStatusExecuted = "executed"
 	RunStatusMissed   = "missed"
 	RunStatusFailed   = "failed"
+	RunStatusDone     = "done"
+	RunStatusEmpty    = "empty"
 )
+
+// SetOccurrenceOutcome records how a launched run actually ended. Addressed by
+// run id because that is the only handle the watcher has once the run is the
+// controller's business.
+func (s *SQLiteStore) SetOccurrenceOutcome(runID, status string) error {
+	if runID == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE schedule_runs SET status = ? WHERE run_id = ?`, status, runID)
+	return err
+}
 
 // RecordOccurrence inserts one occurrence. Idempotent per (schedule, minute):
 // a duplicate (same schedule_id + scheduled_at) is ignored, so a live 'executed'

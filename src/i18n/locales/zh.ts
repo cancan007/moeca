@@ -208,6 +208,22 @@ export const zh: Dict = {
     },
 
     tools: {
+      fieldDefaults: "默认值（模型省略该参数时使用；不支持 {{tpl}}，每行一条）",
+      fieldOutput: "响应的处理方式",
+      output: {
+        text: { label: "文本", hint: "将正文返回给模型（与此前一致）" },
+        base64: { label: "base64 → 文件", hint: "解码 JSON 中的 base64 并写入 /work" },
+        binary: { label: "二进制 → 文件", hint: "将响应正文直接写入 /work" },
+      },
+      fieldJsonPath: "数据位置（响应 JSON 内，点号分隔）",
+      fieldExtensions: "允许的扩展名（逗号分隔；用于校验输出路径）",
+      pollLabel: "异步任务",
+      pollHint: "创建 → 轮询至完成 → 下载",
+      pollDone: "视为完成的 status",
+      pollFail: "视为失败的 status",
+      pollStatusUrl: "状态查询路径（追加到 path 之后）",
+      pollResultUrl: "结果获取路径（追加到 path 之后）",
+      artifactNote: "产出文件的工具会自动获得必填的 path 参数。响应正文不会进入模型，只返回写入位置。",
       desc: "统一管理可交给代理使用的自定义工具（经由 gateway 的 HTTP 调用）。各 Solo 代理再从中选择所使用的工具。密钥由 Proxy 的提供方注入，工具本身不持有密钥。",
       registered: "已登记的工具",
       addTool: "添加工具",
@@ -492,6 +508,8 @@ export const zh: Dict = {
   },
 
   runs: {
+    producedNothing: "无产出",
+    producedNothingWhy: "所有阶段均正常结束，但未写出任何文件。代理可能只是以文字作答——请查看日志与阶段交接。",
     optimizeTitle: "系统提示词优化",
     noEditableGranularity: "未找到可编辑的粒度（模板可能已被删除）。",
     savingSync: "保存并重新同步中…",
@@ -501,6 +519,10 @@ export const zh: Dict = {
   },
 
   daily: {
+    runNow: "执行",
+    runNowTip: "不等 cron，立即执行（暂停中也可）",
+    runningNow: "启动中…",
+    acceptanceCriteria: "需要满足的条件：",
     galleryTitle: "产物画廊",
     calendarTitle: "计划日历",
     gallery: "画廊",
@@ -512,7 +534,7 @@ export const zh: Dict = {
 
     perspective: { discovery: "新发现", contextOpt: "优化", automation: "自动化" },
     perspectiveLabel: "观点",
-    runState: { executed: "已执行", failed: "失败", missed: "未执行", scheduled: "计划中" },
+    runState: { executed: "运行中", failed: "失败", missed: "未执行", scheduled: "计划", done: "完成", empty: "无产出" },
     weekdaysShort: { sun: "日", mon: "一", tue: "二", wed: "三", thu: "四", fri: "五", sat: "六" },
     cron: {
       everyDay: "每天 {{at}}",
@@ -702,6 +724,23 @@ export const zh: Dict = {
   },
 
   tools: {
+    media: {
+      image: {
+        description: "根据提示生成图像，并作为文件写入 /work。",
+        prompt: "希望生成的图像内容。这是图像模型收到的唯一指令。",
+        size: "可选。像素尺寸（例如 1024x1024）。",
+      },
+      speech: {
+        description: "根据文本合成语音，并作为文件写入 /work。",
+        text: "要朗读的文本。",
+        voice: "可选。音色名称（各提供方不同）。",
+      },
+      video: {
+        description: "根据提示生成视频，并作为文件写入 /work。耗时数分钟，是最昂贵的工具。",
+        prompt: "希望生成的视频内容。",
+        seconds: "可选。时长（秒）。",
+      },
+    },
     ragSearch: {
       description: "检索已登记的知识库，获取相关的文档分块。用于事实核对或查阅规格。",
       query: "检索查询（可用自然语言）",
@@ -846,9 +885,11 @@ export const zh: Dict = {
     dynamic:
       "# meta-orchestrator\n\n你是路由器兼编排器。\n\n1. 对提示的复杂度与类型进行分类。\n2. 简单：只挑选 1 个 Solo。\n3. 常规的多工序任务：启动对应的 Static 模板。\n4. 非常规：以最小构成组合出所需的 Solo。\n5. 优先考虑灵活性而非可复现性，并记录选择理由。",
     supervisor:
-      "你是司令塔。请将任务拆解给各个 worker，并在 .orchestra/plan.md 中写明每个 worker 的职责范围与验收条件。你自己不进行实现。",
-    worker: "请只实现 .orchestra/plan.md 中分配给你的部分。",
-    integrate: "请整合各 worker 的产出，消解其中的矛盾，汇总为最终成果。",
+      "你是司令塔。请将任务拆解给各个 worker，并在你的最终消息中写明每个 worker 的职责范围与验收条件 — 该内容会自动传递给后续的 worker。你自己不进行实现。",
+    worker:
+      "请只实现上游阶段交付给你的职责范围。产出必须用 write_file 或生成工具写入 /work 成为文件 — 仅用文字作答不算产出。",
+    integrate:
+      "请整合各 worker 的产出，消解其中的矛盾，汇总为最终成果。并将整合结果写入 /work 的文件。",
     router:
       "可用的模板：\n{{list}}\n\n请选出最适合该任务的 1 个模板，并用 write_file 将**仅该模板的 ID** 写入 `.orchestra/route`（不要写入其他内容）。写完后即可结束。",
   },

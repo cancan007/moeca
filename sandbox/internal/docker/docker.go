@@ -16,7 +16,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -200,8 +202,56 @@ type Runner struct {
 	timeout time.Duration
 }
 
-// New returns a Runner backed by the `docker` binary on PATH.
-func New() *Runner { return &Runner{bin: "docker", timeout: 60 * time.Second} }
+// New returns a Runner backed by the docker CLI, resolved to an absolute path.
+func New() *Runner { return &Runner{bin: Bin(), timeout: 60 * time.Second} }
+
+// dockerBinCandidates are the install locations checked, in order, when no
+// explicit binary is configured. Kept in sync with the Tauri shell's own
+// resolver (src-tauri/src/sidecars.rs) — both processes must find the same
+// docker.
+var dockerBinCandidates = []string{
+	"/opt/homebrew/bin/docker",
+	"/usr/local/bin/docker",
+	"/Applications/Docker.app/Contents/Resources/bin/docker",
+	"$HOME/.docker/bin/docker",
+	"/usr/bin/docker",
+}
+
+// Bin resolves an absolute path to the docker CLI, honouring
+// ORCHESTRA_DOCKER_BIN first.
+//
+// Resolving by name via PATH is not enough. This service is spawned by the Tauri
+// shell, and an app launched from Finder gets launchd's PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin) — which contains no docker on a normal macOS
+// install, where it lives in /usr/local/bin or /opt/homebrew/bin. Every docker
+// call then fails with "executable file not found in $PATH", the first of them
+// being the image resolve that precedes any container: stages fail before they
+// have a container, so there are no logs to explain why. Launching the app from
+// a shell happened to work, which is what made it look intermittent.
+//
+// Falling back to the bare name keeps a PATH-only environment (CI, a container,
+// a developer shell) working exactly as before.
+func Bin() string {
+	if p := strings.TrimSpace(os.Getenv("ORCHESTRA_DOCKER_BIN")); p != "" {
+		return p
+	}
+	home := os.Getenv("HOME")
+	for _, c := range dockerBinCandidates {
+		if strings.HasPrefix(c, "$HOME/") {
+			if home == "" {
+				continue
+			}
+			c = filepath.Join(home, strings.TrimPrefix(c, "$HOME/"))
+		}
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			return c
+		}
+	}
+	if p, err := exec.LookPath("docker"); err == nil {
+		return p
+	}
+	return "docker"
+}
 
 // run executes docker and returns trimmed stdout, or an error enriched with stderr.
 func (r *Runner) run(args ...string) (string, error) {

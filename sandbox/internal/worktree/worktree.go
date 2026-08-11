@@ -22,6 +22,11 @@ import (
 	"time"
 )
 
+// handoffDir is where stages publish their manifests inside the worktree. It
+// mirrors agent/internal/handoff.Dir — the two services share the worktree, not
+// a package.
+const handoffDir = ".orchestra/stages"
+
 // Manager owns the per-stage worktrees for a single run.
 type Manager struct {
 	git        string
@@ -110,6 +115,16 @@ func (m *Manager) Commit(stageID string) (string, error) {
 	}
 	if _, err := m.run(info.dir, "add", "-A"); err != nil {
 		return "", err
+	}
+	// Stage manifests must survive into the commit even in a repository that
+	// gitignores agent scratch — they are how the next stage learns what this
+	// one did, and an ignored one would drop the handoff silently, which is the
+	// exact failure this channel exists to prevent. Force-added by path so
+	// nothing else ignored comes with them; a missing directory is not an error.
+	if _, err := os.Stat(filepath.Join(info.dir, handoffDir)); err == nil {
+		if _, err := m.run(info.dir, "add", "-f", handoffDir); err != nil {
+			return "", err
+		}
 	}
 	// `diff --cached --quiet` exits non-zero when something is staged.
 	if _, err := m.run(info.dir, "diff", "--cached", "--quiet"); err == nil {

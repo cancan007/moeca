@@ -295,3 +295,41 @@ func TestParsePS(t *testing.T) {
 		t.Errorf("unexpected status: %q", got[1].Status)
 	}
 }
+
+// The controller is spawned by a GUI app, which on macOS inherits launchd's
+// PATH (/usr/bin:/bin:/usr/sbin:/sbin) — docker is not on it. Resolving by name
+// therefore fails every docker call, starting with the image resolve that runs
+// before any container exists, so the stage dies with no log to explain it.
+// Bin must find docker by absolute path instead.
+func TestBinFindsDockerOutsideThePath(t *testing.T) {
+	dir := t.TempDir()
+	bin := dir + "/docker"
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "/nonexistent")
+	t.Setenv("ORCHESTRA_DOCKER_BIN", bin)
+
+	if got := Bin(); got != bin {
+		t.Errorf("Bin() = %q, want the configured %q", got, bin)
+	}
+	if !strings.HasPrefix(New().bin, "/") {
+		t.Errorf("New().bin = %q, want an absolute path", New().bin)
+	}
+}
+
+// Without an override, a known install location wins over PATH lookup — and
+// when neither exists Bin still yields something runnable rather than "".
+func TestBinFallsBackToTheBareName(t *testing.T) {
+	t.Setenv("PATH", "/nonexistent")
+	t.Setenv("ORCHESTRA_DOCKER_BIN", "")
+	t.Setenv("HOME", t.TempDir())
+
+	got := Bin()
+	if got == "" {
+		t.Fatal("Bin() = \"\", want a runnable command")
+	}
+	if got != "docker" && !strings.HasPrefix(got, "/") {
+		t.Errorf("Bin() = %q, want an absolute path or the bare name", got)
+	}
+}

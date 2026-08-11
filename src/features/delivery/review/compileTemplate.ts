@@ -67,20 +67,16 @@ function stageFromSolo(
     system: overrides?.system ?? soloSystem(solo),
     task: overrides?.task ?? ctx.task,
     dependsOn,
+    // Generation is in here too: image/speech/video are artifact tools now, so
+    // a stage carries one list of tools rather than a list plus a media block
+    // that only one vendor's API shape fitted.
     tools,
-    // Only pass a media block when a kind is actually enabled: an empty object
-    // would advertise the tools with no route behind them.
-    media: hasMedia(solo.media) ? solo.media : undefined,
     // Web search only exists in the Anthropic dialect. Compiling the grant onto
     // an OpenAI or Gemini stage would put a tool in the run spec that neither
     // side executes, so the stage is compiled honestly: no grant, and the agent
     // answers from what it knows instead of appearing to have searched.
     web: solo.web && (provider.dialect || "anthropic") === "anthropic" ? solo.web : undefined,
   };
-}
-
-function hasMedia(m: SoloAgent["media"]): boolean {
-  return !!m && !!(m.image || m.speech || m.video);
 }
 
 /**

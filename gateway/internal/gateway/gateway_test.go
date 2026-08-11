@@ -512,3 +512,61 @@ func TestContentCaptureAndAttribution(t *testing.T) {
 		t.Errorf("respBody not captured")
 	}
 }
+
+// A request the provider REFUSED is not billed by the provider, and must not be
+// billed here. One 8 MB request rejected with "prompt is too long" was charged
+// two million tokens from its byte estimate, exhausting the session's whole
+// budget and blocking every run after it — for work no upstream ever did.
+func TestARefusedRequestIsNotCharged(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"prompt is too long"}`))
+	}))
+	defer up.Close()
+
+	cfg := baseConfig(up.URL)
+	svc := cfg.Services["echo"]
+	svc.Budget = config.Budget{MaxTokensPerSession: 1000}
+	cfg.Services["echo"] = svc
+
+	gw := New(cfg, io.Discard, nil, nil)
+	srv := httptest.NewServer(gw)
+	defer srv.Close()
+
+	h := map[string]string{SessionHeader: "tok"}
+	// Big enough that its byte estimate alone would blow the ceiling.
+	r1 := do(t, srv, "POST", "/echo/a", h, strings.Repeat("x", 20000))
+	r1.Body.Close()
+	if r1.StatusCode != http.StatusBadRequest {
+		t.Fatalf("first status = %d, want the upstream's 400", r1.StatusCode)
+	}
+	// The next request must still be allowed: nothing was spent.
+	r2 := do(t, srv, "POST", "/echo/a", h, "hi")
+	r2.Body.Close()
+	if r2.StatusCode == http.StatusPaymentRequired {
+		t.Error("a refused request consumed the budget")
+	}
+	if spent := gw.budget.total("s1|echo"); spent != 0 {
+		t.Errorf("spent = %d after a refused request, want 0", spent)
+	}
+}
+
+// A failure that may have generated tokens before it broke still pays. Only the
+// provable "the provider declined to process this" case is free.
+func TestAServerErrorStillCharges(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("boom"))
+	}))
+	defer up.Close()
+
+	gw := New(baseConfig(up.URL), io.Discard, nil, nil)
+	srv := httptest.NewServer(gw)
+	defer srv.Close()
+
+	r := do(t, srv, "POST", "/echo/a", map[string]string{SessionHeader: "tok"}, strings.Repeat("x", 4000))
+	r.Body.Close()
+	if spent := gw.budget.total("s1|echo"); spent == 0 {
+		t.Error("a 5xx was treated as free; a dropped generation can still have been billed")
+	}
+}

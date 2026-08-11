@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"orchestra/agent/internal/handoff"
 	"orchestra/agent/internal/llm"
 	"orchestra/agent/internal/tools"
 )
@@ -78,12 +79,12 @@ func TestLoopWritesFileAndTerminates(t *testing.T) {
 
 	var logs bytes.Buffer
 	runner := NewRunner(Config{
-		Model:  "claude-opus-4-8",
-		System: "test system",
-		Task:   "create hello.txt",
+		Model:    "claude-opus-4-8",
+		System:   "test system",
+		Task:     "create hello.txt",
 		Provider: llm.New(srv.URL, nil),
-		Tools:  tools.New(workdir),
-		LogW:   &logs,
+		Tools:    tools.New(workdir),
+		LogW:     &logs,
 	})
 
 	if err := runner.Run(context.Background()); err != nil {
@@ -164,8 +165,8 @@ func TestLoopMaxTokensStops(t *testing.T) {
 	runner := NewRunner(Config{
 		Model: "m", Task: "x",
 		Provider: llm.New(srv.URL, nil),
-		Tools:  tools.New(t.TempDir()),
-		LogW:   &logs,
+		Tools:    tools.New(t.TempDir()),
+		LogW:     &logs,
 	})
 	if err := runner.Run(context.Background()); err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -179,4 +180,191 @@ func readAll(r *http.Request) ([]byte, error) {
 	var buf bytes.Buffer
 	_, err := buf.ReadFrom(r.Body)
 	return buf.Bytes(), err
+}
+
+// A stage that answers in prose and writes nothing must still publish a
+// manifest: the run this was built for had exactly that shape, and the stage
+// downstream had no way to tell "my dependency produced nothing" from "I have
+// not found the file yet". The runner writes it, not the model, so no prompt
+// can forget to.
+func TestRunPublishesAManifestEvenWhenNothingIsWritten(t *testing.T) {
+	workdir := t.TempDir()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"id": "msg_1", "model": "m", "role": "assistant", "stop_reason": "end_turn",
+			"content": [{"type": "text", "text": "Here is the plan: worker-0 draws the dog."}],
+			"usage": {"input_tokens": 5, "output_tokens": 3}
+		}`))
+	}))
+	defer srv.Close()
+
+	runner := NewRunner(Config{
+		Model: "m", Task: "画像作成", Provider: llm.New(srv.URL, nil),
+		Tools: tools.New(workdir), LogW: &bytes.Buffer{},
+		Workdir: workdir, StageID: "sup-plan", RunID: "run-1",
+	})
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	m, ok := handoff.Read(workdir, "sup-plan")
+	if !ok {
+		t.Fatal("no manifest published")
+	}
+	// The closing text used to be discarded — that is how a planner's plan
+	// disappeared between one stage and the next.
+	if !strings.Contains(m.Summary, "worker-0 draws the dog") {
+		t.Errorf("summary = %q, want the assistant's closing message", m.Summary)
+	}
+	if len(m.Files) != 0 {
+		t.Errorf("files = %v, want none", m.Files)
+	}
+	if m.StopReason != "end_turn" || m.Run != "run-1" {
+		t.Errorf("manifest = %+v", m)
+	}
+}
+
+// The manifest lists what the stage actually put on disk, taken from the tools
+// rather than from what the model claims.
+func TestManifestListsProducedFiles(t *testing.T) {
+	workdir := t.TempDir()
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		calls++
+		if calls == 1 {
+			w.Write([]byte(`{
+				"id": "m1", "model": "m", "role": "assistant", "stop_reason": "tool_use",
+				"content": [{"type": "tool_use", "id": "t1", "name": "write_file",
+					"input": {"path": "out/report.md", "content": "hi"}}],
+				"usage": {"input_tokens": 1, "output_tokens": 1}
+			}`))
+			return
+		}
+		w.Write([]byte(`{
+			"id": "m2", "model": "m", "role": "assistant", "stop_reason": "end_turn",
+			"content": [{"type": "text", "text": "done"}],
+			"usage": {"input_tokens": 1, "output_tokens": 1}
+		}`))
+	}))
+	defer srv.Close()
+
+	runner := NewRunner(Config{
+		Model: "m", Task: "write a report", Provider: llm.New(srv.URL, nil),
+		Tools: tools.New(workdir), LogW: &bytes.Buffer{},
+		Workdir: workdir, StageID: "worker-0",
+	})
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m, _ := handoff.Read(workdir, "worker-0")
+	if len(m.Files) != 1 || m.Files[0] != "out/report.md" {
+		t.Errorf("files = %v, want [out/report.md]", m.Files)
+	}
+}
+
+// A stage outside the orchestrator has no id and nothing downstream, so it
+// publishes nothing rather than littering the worktree.
+func TestNoManifestWithoutAStageID(t *testing.T) {
+	workdir := t.TempDir()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"m","model":"m","role":"assistant","stop_reason":"end_turn",
+			"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	runner := NewRunner(Config{
+		Model: "m", Task: "t", Provider: llm.New(srv.URL, nil),
+		Tools: tools.New(workdir), LogW: &bytes.Buffer{}, Workdir: workdir,
+	})
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workdir, ".orchestra")); !os.IsNotExist(err) {
+		t.Error("a bare run published a manifest")
+	}
+}
+
+// A failing tool has to say why, in the log. Recording only the flag meant a
+// timeout, a provider refusal and a rejected path were indistinguishable, and
+// the reason had to be dug out of the gateway's audit database afterwards.
+func TestAFailedToolCallLogsItsReason(t *testing.T) {
+	workdir := t.TempDir()
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		calls++
+		if calls == 1 {
+			// read_file on something that is not there.
+			w.Write([]byte(`{"id":"m1","model":"m","role":"assistant","stop_reason":"tool_use",
+				"content":[{"type":"tool_use","id":"t1","name":"read_file","input":{"path":"missing.txt"}}],
+				"usage":{"input_tokens":1,"output_tokens":1}}`))
+			return
+		}
+		w.Write([]byte(`{"id":"m2","model":"m","role":"assistant","stop_reason":"end_turn",
+			"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	var logs bytes.Buffer
+	runner := NewRunner(Config{
+		Model: "m", Task: "t", Provider: llm.New(srv.URL, nil),
+		Tools: tools.New(workdir), LogW: &logs,
+	})
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var found bool
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var m map[string]any
+		if json.Unmarshal([]byte(line), &m) != nil || m["type"] != "tool_result" {
+			continue
+		}
+		if m["isError"] != true {
+			continue
+		}
+		found = true
+		if msg, _ := m["message"].(string); msg == "" {
+			t.Errorf("a failed tool_result carried no message: %s", line)
+		}
+	}
+	if !found {
+		t.Fatalf("no failing tool_result was logged:\n%s", logs.String())
+	}
+}
+
+// A successful call's output is often the bulk of the run, so it stays out of
+// the log.
+func TestASuccessfulToolCallDoesNotLogItsOutput(t *testing.T) {
+	workdir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workdir, "a.txt"), []byte("SECRETLY-LONG-CONTENT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		calls++
+		if calls == 1 {
+			w.Write([]byte(`{"id":"m1","model":"m","role":"assistant","stop_reason":"tool_use",
+				"content":[{"type":"tool_use","id":"t1","name":"read_file","input":{"path":"a.txt"}}],
+				"usage":{"input_tokens":1,"output_tokens":1}}`))
+			return
+		}
+		w.Write([]byte(`{"id":"m2","model":"m","role":"assistant","stop_reason":"end_turn",
+			"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	var logs bytes.Buffer
+	runner := NewRunner(Config{
+		Model: "m", Task: "t", Provider: llm.New(srv.URL, nil),
+		Tools: tools.New(workdir), LogW: &logs,
+	})
+	runner.Run(context.Background())
+	if strings.Contains(logs.String(), "SECRETLY-LONG-CONTENT") {
+		t.Error("a successful tool's output was written to the log")
+	}
 }

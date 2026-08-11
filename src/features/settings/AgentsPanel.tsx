@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cardStyle, sectionTitle, segStyle } from "./ui";
 import { useStore } from "@/store/useStore";
-import { sandbox, type ImagePolicy, type MediaTools, type WebSearch } from "@/lib/sandbox";
+import { sandbox, type ImagePolicy, type WebSearch } from "@/lib/sandbox";
 import {
   type SoloAgent,
   type StaticTemplate,
@@ -39,28 +39,6 @@ function RoleNote({ dot, tag, tagColor, desc }: { dot: string; tag: string; tagC
   );
 }
 
-// The three media kinds an agent can be granted, as switches.
-//
-// Each is a separate grant rather than one "media" flag because they differ by
-// an order of magnitude in cost and in how much damage an over-eager agent can
-// do with them. Video especially: a loop that decides to re-render is a loop
-// that spends real money, so it has to be turned on deliberately.
-const MEDIA_KINDS: (keyof MediaTools)[] = ["image", "speech", "video"];
-
-const MEDIA_COLOR: Record<keyof MediaTools, string> = {
-  image: "#34d3e0",
-  speech: "#e0a83e",
-  video: "#b08ad9",
-};
-
-// Starting points, not constraints — the field stays editable because these
-// model names move faster than this file does.
-const MEDIA_DEFAULT_MODEL: Record<keyof MediaTools, string> = {
-  image: "gpt-image-1",
-  speech: "gpt-4o-mini-tts",
-  video: "sora-2",
-};
-
 /* ─────────────────────────── agent edit modal ─────────────────────────── */
 
 function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: () => void }) {
@@ -72,15 +50,10 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
   const [toolIds, setToolIds] = useState<string[]>(base?.toolIds ?? []);
   const toggleTool = (id: string) => setToolIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   const [useRag, setUseRag] = useState<boolean>(base?.useRag ?? false);
-  // Media generation, one switch per kind. The provider prefix follows the
-  // agent's own provider so a template cannot point generation at a route the
-  // gateway was never configured for; the model ids are editable because they
-  // are not the chat models and the provider list does not carry them.
-  const [media, setMedia] = useState<MediaTools>(base?.media ?? {});
-  const toggleMedia = (kind: keyof MediaTools) =>
-    setMedia((m) => (m[kind] ? { ...m, [kind]: undefined } : { ...m, [kind]: { prefix: providerPrefix(), model: MEDIA_DEFAULT_MODEL[kind] } }));
-  const setMediaModel = (kind: keyof MediaTools, model: string) =>
-    setMedia((m) => (m[kind] ? { ...m, [kind]: { ...m[kind]!, model } } : m));
+  // Media generation is no longer a switch here. Image, speech and video are
+  // ordinary tools now (Settings → Tools), granted like any other, so this
+  // screen has one list of capabilities instead of two that behaved
+  // differently and could not name the same providers.
   // Web search. No route to configure — the provider runs the search — so the
   // only knob is the budget, and it is a budget rather than a model id because
   // this is the one tool billed per call instead of per token.
@@ -114,8 +87,6 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
   }, []);
   const chosenImage = images.find((i) => i.name === (image || "base"));
 
-  const providerPrefix = () => provider?.prefix ?? "/openai/";
-
   // When switching provider, snap the model to one the provider offers.
   const onProvider = (pid: string) => {
     setProviderId(pid);
@@ -132,11 +103,6 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
       effort: effort || undefined,
       maxTokens: Number.isFinite(mt) && mt > 0 ? mt : undefined,
       system: prompt || undefined, toolIds, useRag,
-      // Re-stamp the prefix from the current provider: the agent's provider can
-      // have been switched after the switches were flipped.
-      media: MEDIA_KINDS.some((k) => media[k])
-        ? Object.fromEntries(MEDIA_KINDS.filter((k) => media[k]).map((k) => [k, { ...media[k]!, prefix: providerPrefix() }]))
-        : undefined,
       web: web ? { ...web, maxUses: positiveInt(webMaxUses) } : undefined,
       // A command atom keeps its model fields (so switching back to "agent"
       // does not lose them) but they are dropped at compile time.
@@ -292,25 +258,6 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
                   />
                 </div>
               )}
-              {MEDIA_KINDS.map((mk) => {
-                const on = !!media[mk];
-                return (
-                  <div key={mk} onClick={() => toggleMedia(mk)} title={t(`settings.agents.media.${mk}.hint`)} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", font: "500 10.5px 'IBM Plex Mono'", color: on ? "#06121e" : "var(--tx3)", background: on ? MEDIA_COLOR[mk] : "var(--bg-card2)", border: `1px solid ${on ? MEDIA_COLOR[mk] : "var(--bd2)"}`, borderRadius: 7, padding: "5px 10px" }}>
-                    {on ? "✓ " : ""}{t(`settings.agents.media.${mk}.label`)}
-                  </div>
-                );
-              })}
-              {MEDIA_KINDS.filter((k) => media[k]).map((mk) => (
-                <div key={`${mk}-model`} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t(`settings.agents.media.${mk}.label`)}</span>
-                  <input
-                    value={media[mk]?.model ?? ""}
-                    onChange={(e) => setMediaModel(mk, e.target.value)}
-                    placeholder={MEDIA_DEFAULT_MODEL[mk]}
-                    style={{ width: 120, background: "var(--bg-deep)", border: "1px solid var(--bd2)", borderRadius: 6, padding: "4px 7px", font: "400 10px 'IBM Plex Mono'", color: "var(--tx2)", outline: "none" }}
-                  />
-                </div>
-              ))}
               {allTools.length === 0 ? (
                 <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.agents.noTools")}</span>
               ) : (

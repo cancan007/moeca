@@ -12,8 +12,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
+	"orchestra/agent/internal/handoff"
 	"orchestra/agent/internal/llm"
 	"orchestra/agent/internal/tools"
 )
@@ -47,6 +49,13 @@ type Config struct {
 	// KeepRecent is how many trailing turns survive a compaction verbatim
 	// (default DefaultKeepRecent).
 	KeepRecent int
+
+	// Workdir/StageID/RunID identify this stage well enough to publish a
+	// handoff manifest when the loop ends. StageID empty => no manifest (a bare
+	// agent run outside the orchestrator has nothing downstream of it).
+	Workdir string
+	StageID string
+	RunID   string
 }
 
 // Runner executes the tool-use loop for a Config.
@@ -74,7 +83,46 @@ func NewRunner(cfg Config) *Runner {
 
 // Run drives the loop to completion. It returns nil when Claude ends its turn,
 // and an error on a fatal API failure or when the iteration cap is hit.
+//
+// However it ends, the stage publishes a handoff manifest before returning —
+// including when it ends badly. A dependent stage needs to know that its
+// dependency ran and produced nothing far more than it needs a tidy absence.
 func (r *Runner) Run(ctx context.Context) error {
+	stop, summary, err := r.loop(ctx)
+	r.publish(stop, summary, err)
+	return err
+}
+
+// publish writes this stage's manifest. A failure to write is logged rather
+// than returned: the run's own outcome is what the caller is waiting on, and
+// losing the manifest must not turn a successful stage into a failed one.
+func (r *Runner) publish(stopReason, summary string, runErr error) {
+	if r.cfg.StageID == "" || r.cfg.Workdir == "" {
+		return
+	}
+	m := handoff.Manifest{
+		Stage:      r.cfg.StageID,
+		Run:        r.cfg.RunID,
+		Task:       r.cfg.Task,
+		Summary:    strings.TrimSpace(summary),
+		Files:      r.cfg.Tools.Produced(),
+		StopReason: stopReason,
+	}
+	if runErr != nil {
+		m.Error = runErr.Error()
+	}
+	if err := handoff.Write(r.cfg.Workdir, m); err != nil {
+		r.log.event(logLine{Type: "error", Message: err.Error()})
+		return
+	}
+	r.log.event(logLine{Type: "handoff", Stage: r.cfg.StageID, Files: m.Files})
+}
+
+// loop is Run's body: it returns the stop reason and the assistant's closing
+// text alongside the error, so the caller can record what the stage said. That
+// text used to be dropped on the floor — which is how a planner could describe
+// its plan in prose and leave the next stage nothing to read.
+func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err error) {
 	r.log.event(logLine{Type: "task_start", Model: r.cfg.Model, Task: r.cfg.Task})
 
 	messages := []llm.Message{
@@ -106,7 +154,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		resp, err := r.cfg.Provider.CreateMessage(ctx, req)
 		if err != nil {
 			r.log.event(logLine{Type: "error", Iteration: i, Message: err.Error()})
-			return fmt.Errorf("agent: iteration %d: %w", i, err)
+			return "error", "", fmt.Errorf("agent: iteration %d: %w", i, err)
 		}
 		lastInput = resp.Usage.InputTokens
 
@@ -123,11 +171,11 @@ func (r *Runner) Run(ctx context.Context) error {
 		switch resp.StopReason {
 		case "end_turn":
 			r.log.event(logLine{Type: "task_done", Iteration: i, StopReason: resp.StopReason})
-			return nil
+			return resp.StopReason, textOf(resp.Content), nil
 		case "max_tokens":
 			r.log.event(logLine{Type: "task_stopped", Iteration: i, StopReason: resp.StopReason,
 				Message: "response hit max_tokens; stopping"})
-			return nil
+			return resp.StopReason, textOf(resp.Content), nil
 		case "tool_use":
 			// Echo the full assistant content back verbatim (thinking + tool_use).
 			messages = append(messages, llm.Message{Role: "assistant", Content: resp.Content})
@@ -142,12 +190,23 @@ func (r *Runner) Run(ctx context.Context) error {
 		default:
 			r.log.event(logLine{Type: "task_stopped", Iteration: i, StopReason: resp.StopReason,
 				Message: "unexpected stop_reason; stopping"})
-			return nil
+			return resp.StopReason, textOf(resp.Content), nil
 		}
 	}
 
 	r.log.event(logLine{Type: "error", Message: "reached max iterations without end_turn"})
-	return fmt.Errorf("agent: reached max iterations (%d) without end_turn", r.cfg.MaxIter)
+	return "max_iterations", "", fmt.Errorf("agent: reached max iterations (%d) without end_turn", r.cfg.MaxIter)
+}
+
+// maxToolErrLog bounds what a failing tool contributes to the log. Enough for a
+// provider's error envelope, short of a stack trace or a truncated payload.
+const maxToolErrLog = 1500
+
+func truncateLog(s string) string {
+	if len(s) <= maxToolErrLog {
+		return s
+	}
+	return s[:maxToolErrLog] + "…"
 }
 
 // executeTools runs every tool_use block in the assistant content and returns
@@ -168,7 +227,17 @@ func (r *Runner) executeTools(content []llm.Block) []llm.Block {
 			}
 		}
 		out, isErr := r.cfg.Tools.Dispatch(b.Name, args)
-		r.log.event(logLine{Type: "tool_result", Tool: b.Name, IsError: isErr})
+		// A failed tool call has to say why. Recording only the flag meant a
+		// tool that timed out, was refused by its provider, or was handed a
+		// path it would not accept all looked identical in the log — and the
+		// reason had to be reconstructed from the gateway's audit database
+		// afterwards, if it was still there. Only failures carry the text: a
+		// successful call's output is often the bulk of the run.
+		res := logLine{Type: "tool_result", Tool: b.Name, IsError: isErr}
+		if isErr {
+			res.Message = truncateLog(out)
+		}
+		r.log.event(res)
 		results = append(results, llm.ToolResultBlock(b.ID, out, isErr))
 	}
 	return results

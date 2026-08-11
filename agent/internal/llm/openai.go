@@ -68,6 +68,35 @@ func oaEffort(effort string) string {
 	}
 }
 
+// reasoningModels are the OpenAI model families that accept reasoning_effort.
+//
+// Matched by prefix because the versioned ids move ("o3", "o3-2025-04-16") far
+// faster than this file does.
+var reasoningModels = []string{"o1", "o3", "o4", "gpt-5"}
+
+// acceptsEffort reports whether a model takes the reasoning_effort argument.
+//
+// The chat models do not, and they do not ignore it either: gpt-4o answers a
+// request carrying it with `400 Unrecognized request argument supplied:
+// reasoning_effort`, which kills the stage outright. Since the agent applies a
+// default effort of its own — nobody has to ask for one — every non-reasoning
+// OpenAI model was unusable, and the failure named a parameter the operator had
+// never set.
+//
+// So the field is sent only where it is known to belong. An unrecognised model
+// is treated as not accepting it: dropping the effort costs some depth on a
+// model that would have taken it, while sending it costs the whole run on one
+// that would not.
+func acceptsEffort(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	for _, p := range reasoningModels {
+		if m == p || strings.HasPrefix(m, p+"-") || strings.HasPrefix(m, p+".") {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *openAIClient) encode(req Request) oaRequest {
 	msgs := make([]oaMessage, 0, len(req.Messages)+1)
 	if req.System != "" {
@@ -114,7 +143,7 @@ func (c *openAIClient) encode(req Request) oaRequest {
 		tools = append(tools, oaTool{Type: "function", Function: oaToolFuncDef{Name: t.Name, Description: t.Description, Parameters: t.InputSchema}})
 	}
 	var effort string
-	if req.OutputConfig != nil {
+	if req.OutputConfig != nil && acceptsEffort(req.Model) {
 		effort = oaEffort(req.OutputConfig.Effort)
 	}
 	return oaRequest{Model: req.Model, MaxCompletionTokens: req.MaxTokens, ReasoningEffort: effort, Messages: msgs, Tools: tools}

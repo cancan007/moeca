@@ -224,6 +224,14 @@ export function AgentRunner({ task, templateRef }: { task: DeliveryTask; templat
                 <div style={{ flex: 1 }} />
                 <span style={{ font: "500 9px 'IBM Plex Mono'", color: STATUS_COLOR[s.status] }}>{t(STATUS_KEY[s.status])}{s.status === "failed" && s.exitCode ? `(${s.exitCode})` : ""}</span>
               </div>
+              {/* A stage that failed before it had a container has no log to
+                  expand, so its reason is shown up front rather than behind a
+                  click that would only ever reveal "no log". */}
+              {s.error && (
+                <div style={{ margin: "4px 0 0", background: "var(--bg-deep)", border: "1px solid var(--bd3)", borderRadius: 6, padding: "7px 10px", font: "400 9.5px 'IBM Plex Mono'", color: "var(--red)", lineHeight: 1.6, wordBreak: "break-word" }}>
+                  {s.error}
+                </div>
+              )}
               {sel === s.id && (
                 <pre style={{ margin: "4px 0 0", maxHeight: 180, overflow: "auto", background: "var(--bg-deep)", border: "1px solid var(--bd3)", borderRadius: 6, padding: "9px 11px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, lineHeight: 1.6, color: "var(--tx3)", whiteSpace: "pre-wrap" }}>
                   {stageLogs[s.id] || t("review.noStageLog")}

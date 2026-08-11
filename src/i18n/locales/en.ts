@@ -208,6 +208,22 @@ export const en: Dict = {
     },
 
     tools: {
+      fieldDefaults: "Defaults (used when the model omits a parameter; not {{tpl}}, one per line)",
+      fieldOutput: "What the response becomes",
+      output: {
+        text: { label: "Text", hint: "Return the body to the model (unchanged behaviour)" },
+        base64: { label: "base64 → file", hint: "Decode the base64 inside the JSON and write it into /work" },
+        binary: { label: "Binary → file", hint: "Write the response body itself into /work" },
+      },
+      fieldJsonPath: "Where the data sits (dot-separated, in the JSON response)",
+      fieldExtensions: "Allowed extensions (comma-separated; validates the destination)",
+      pollLabel: "Asynchronous job",
+      pollHint: "create → poll until finished → download",
+      pollDone: "Statuses meaning finished",
+      pollFail: "Statuses meaning failed",
+      pollStatusUrl: "Status path (appended to the path)",
+      pollResultUrl: "Result path (appended to the path)",
+      artifactNote: "A file-producing tool automatically gains a required `path` argument. The response body never reaches the model — only where the file was written.",
       desc: "Manage the custom tools agents can be given — HTTP calls made through the gateway — in one place. Each Solo agent then picks which of them it may use. Credentials are injected by the Proxy provider; the tool itself holds none.",
       registered: "Registered tools",
       addTool: "Add tool",
@@ -492,6 +508,8 @@ export const en: Dict = {
   },
 
   runs: {
+    producedNothing: "No artifacts",
+    producedNothingWhy: "Every stage finished cleanly, but no file was written. The agents may have answered in prose instead — check the logs and the stage handoffs.",
     optimizeTitle: "System prompt optimization",
     noEditableGranularity: "No editable granularity found (the template may have been deleted).",
     savingSync: "Saving and resyncing…",
@@ -501,6 +519,10 @@ export const en: Dict = {
   },
 
   daily: {
+    runNow: "Run",
+    runNowTip: "Run it now, without waiting for its cron (works while paused)",
+    runningNow: "Starting…",
+    acceptanceCriteria: "Acceptance criteria:",
     galleryTitle: "Artifact gallery",
     calendarTitle: "Schedule calendar",
     gallery: "Gallery",
@@ -512,7 +534,7 @@ export const en: Dict = {
 
     perspective: { discovery: "Discovery", contextOpt: "Optimization", automation: "Automation" },
     perspectiveLabel: "Perspective",
-    runState: { executed: "Ran", failed: "Failed", missed: "Missed", scheduled: "Scheduled" },
+    runState: { executed: "Running", failed: "Failed", missed: "Missed", scheduled: "Scheduled", done: "Done", empty: "No artifacts" },
     weekdaysShort: { sun: "Sun", mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat" },
     cron: {
       everyDay: "Daily at {{at}}",
@@ -702,6 +724,23 @@ export const en: Dict = {
   },
 
   tools: {
+    media: {
+      image: {
+        description: "Generate an image from a prompt and write it into /work as a file.",
+        prompt: "What the image should show. This is the only instruction the image model gets.",
+        size: "Optional pixel size, e.g. 1024x1024.",
+      },
+      speech: {
+        description: "Synthesise speech from text and write the audio into /work as a file.",
+        text: "The text to speak.",
+        voice: "Optional voice name, provider-specific.",
+      },
+      video: {
+        description: "Generate a video from a prompt and write it into /work as a file. Takes minutes and is the most expensive tool available.",
+        prompt: "What the video should show.",
+        seconds: "Optional duration in seconds.",
+      },
+    },
     ragSearch: {
       description:
         "Search the registered knowledge base and retrieve relevant document chunks. Use it to check facts or consult a specification.",
@@ -849,9 +888,11 @@ export const en: Dict = {
     dynamic:
       "# meta-orchestrator\n\nYou are the router and orchestrator.\n\n1. Classify the prompt by complexity and kind.\n2. Simple: pick exactly one Solo.\n3. Routine multi-stage work: start the matching Static template.\n4. Non-routine: compose the smallest set of Solos that covers it.\n5. Favour flexibility over reproducibility, and record why you chose what you chose.",
     supervisor:
-      "You are the supervisor. Break the task down for your workers and write each worker's scope and acceptance criteria into .orchestra/plan.md. You do not implement anything yourself.",
-    worker: "Implement only the part of .orchestra/plan.md assigned to you.",
-    integrate: "Integrate the workers' output, resolve any contradictions, and produce the final result.",
+      "You are the supervisor. Break the task down for your workers and state each worker's scope and acceptance criteria in your closing message — it is handed to them automatically. You do not implement anything yourself.",
+    worker:
+      "Implement only the scope handed to you by the upstream stages. Your output must land on disk in /work via write_file or a generation tool — answering in prose produces nothing.",
+    integrate:
+      "Integrate the workers' output, resolve any contradictions, and produce the final result. Write the integrated result to a file in /work.",
     router:
       "Available templates:\n{{list}}\n\nPick the one template that best fits the task and use write_file to write **only that template's id** to `.orchestra/route` (nothing else). Stop once you have written it.",
   },

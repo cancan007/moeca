@@ -11,6 +11,7 @@ import {
 } from "@/lib/templates";
 import { providersApi, type ProviderInput, type ProviderView } from "@/lib/providers";
 import type { ToolDef } from "@/lib/tools";
+import { mediaToolPresets, migrateMediaGrants } from "@/lib/mediaTools";
 import i18n, { currentLang, type Lang } from "@/i18n";
 
 export type Theme = "dark" | "light";
@@ -148,7 +149,10 @@ function templateDefaults(lng?: string): TemplatesBlob {
     solos: defaultSolos(lng),
     staticTpls: defaultStaticTpls(lng),
     providers: defaultProviders,
-    tools: [],
+    // The generation tools ship as ordinary, editable tool definitions. They
+    // used to be three switches backed by vendor-shaped code with no route of
+    // their own; as presets they are a starting point the operator owns.
+    tools: mediaToolPresets(),
     dynamicPrompt: defaultDynamicPrompt(lng),
     globalPrompt: defaultGlobalPrompt(lng),
   };
@@ -166,7 +170,7 @@ function loadTemplates(): TemplatesBlob {
     const persistedProviders = parsed.providers ?? defaults.providers;
     const haveNames = new Set(persistedProviders.map((p) => p.name));
     const providers = [...persistedProviders, ...defaults.providers.filter((p) => !haveNames.has(p.name))];
-    return {
+    const blob: TemplatesBlob = {
       solos: (parsed.solos ?? defaults.solos).map(normSolo),
       staticTpls: parsed.staticTpls ?? defaults.staticTpls,
       providers,
@@ -174,6 +178,18 @@ function loadTemplates(): TemplatesBlob {
       dynamicPrompt: parsed.dynamicPrompt ?? defaults.dynamicPrompt,
       globalPrompt: parsed.globalPrompt ?? defaults.globalPrompt,
     };
+    // One-time move of the old media grants onto tools. It writes only when
+    // there was something to move, so this cannot churn stored state on every
+    // load — and the grant's own model and route are carried over rather than
+    // repaired, because silently rewriting where an agent points is how the
+    // /anthropic/ image route went unnoticed in the first place.
+    const migrated = migrateMediaGrants(blob.solos, blob.tools);
+    if (migrated) {
+      const next = { ...blob, ...migrated };
+      persistTemplates(next);
+      return next;
+    }
+    return blob;
   } catch {
     return defaults;
   }

@@ -49,6 +49,15 @@ func (b *budgetLedger) add(key string, tokens int64) int64 {
 	return b.spent[key]
 }
 
+// total reports what a key has spent without charging it. Used for a request
+// the upstream refused: it still belongs in the access log with the running
+// total, but it must not move that total.
+func (b *budgetLedger) total(key string) int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.spent[key]
+}
+
 // snapshot returns a copy of the current ledger for status reporting.
 func (b *budgetLedger) snapshot() map[string]int64 {
 	b.mu.Lock()

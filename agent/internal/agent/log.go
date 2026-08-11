@@ -27,6 +27,11 @@ type logLine struct {
 	Message    string     `json:"message,omitempty"`
 	Usage      *llm.Usage `json:"usage,omitempty"`
 
+	// handoff manifest (Type == "handoff"): what this stage published for the
+	// stages that depend on it.
+	Stage string   `json:"stage,omitempty"`
+	Files []string `json:"files,omitempty"`
+
 	// compaction accounting (Type == "compaction")
 	Before int `json:"before,omitempty"` // message count before summarizing
 	After  int `json:"after,omitempty"`  // message count after summarizing

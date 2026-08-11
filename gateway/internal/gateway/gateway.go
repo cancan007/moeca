@@ -61,10 +61,10 @@ type Gateway struct {
 	adminToken     string // raw token (dev/test); prefer the hash
 	adminTokenHash string // hex sha256 of the admin token (production)
 	log            *logger
-	limiters   *limiterSet
-	budget     *budgetLedger
-	transport  http.RoundTripper
-	now        func() time.Time
+	limiters       *limiterSet
+	budget         *budgetLedger
+	transport      http.RoundTripper
+	now            func() time.Time
 }
 
 // New builds a Gateway. logW receives JSON access lines; nowFn/transport are
@@ -97,10 +97,10 @@ func New(cfg *config.Config, logW io.Writer, nowFn func() time.Time, transport h
 		adminToken:     adminToken,
 		adminTokenHash: strings.ToLower(strings.TrimSpace(adminHash)),
 		log:            newLogger(logW),
-		limiters:   newLimiterSet(nowFn),
-		budget:     newBudgetLedger(),
-		transport:  transport,
-		now:        nowFn,
+		limiters:       newLimiterSet(nowFn),
+		budget:         newBudgetLedger(),
+		transport:      transport,
+		now:            nowFn,
 	}
 }
 
@@ -339,7 +339,21 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, session string, 
 			charge = int64(in + out)
 		}
 	}
-	tokens := g.budget.add(session+"|"+name, charge)
+	// A request the provider REFUSED is not billed by the provider, so it must
+	// not be billed here either. Without this, the byte estimate stands in for
+	// usage that never happened: one 8 MB request rejected with "prompt is too
+	// long" was charged two million tokens and exhausted the session's entire
+	// budget, blocking every run after it — for work no upstream ever did.
+	//
+	// Deliberately narrow. A 4xx with no reported usage is the provable case:
+	// the provider looked at the request and declined it. A 5xx or a dropped
+	// stream may well have generated tokens before it broke, so those keep
+	// paying the estimate.
+	key := session + "|" + name
+	tokens := g.budget.total(key)
+	if refused := rec.status >= 400 && rec.status < 500 && inTok+outTok == 0; !refused {
+		tokens = g.budget.add(key, charge)
+	}
 	g.log.write(accessLog{
 		RequestID: reqID, Session: session, Run: run, Stage: stage, Service: name, Model: model,
 		Method: r.Method, Path: r.URL.Path, Upstream: target.Host,

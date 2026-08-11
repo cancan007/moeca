@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type CSSProperties } from "react";
-import { schedules as schedulesApi, type Schedule as LiveSchedule, type SchedulePerspective } from "@/lib/schedules";
+import { schedules as schedulesApi, scheduleTask, type Schedule as LiveSchedule, type SchedulePerspective } from "@/lib/schedules";
 import { daily as dailyApi, type Ticket, type ScheduleRun } from "@/lib/daily";
 import { useStore } from "@/store/useStore";
 import { templateOptions, compileRef, buildRunSpec, type TemplateStores } from "@/lib/agentTemplates";
@@ -47,11 +47,19 @@ function ticketStateColor(state: string): string {
   return "#5fbf95";
 }
 
-// label + color for a schedule occurrence status (executed / missed / failed)
+// label + color for a schedule occurrence status.
+//
+// "executed" now means a run that was launched and has not been seen to finish
+// — the outcome arrives later, as done / empty / failed. `empty` is the one
+// worth having: nothing failed, so it is not a failure, but the run produced no
+// files, which is not a success either and used to be indistinguishable from
+// one.
 function runStatusStyle(status: string): { label: string; color: string } {
   if (status === "missed") return { label: i18n.t("daily.runState.missed"), color: "#d39a4e" };
   if (status === "failed") return { label: i18n.t("daily.runState.failed"), color: "#e0654e" };
-  return { label: i18n.t("daily.runState.executed"), color: "#5fbf95" };
+  if (status === "empty") return { label: i18n.t("daily.runState.empty"), color: "#d39a4e" };
+  if (status === "done") return { label: i18n.t("daily.runState.done"), color: "#5fbf95" };
+  return { label: i18n.t("daily.runState.executed"), color: "#5b9fe8" };
 }
 
 // compact "MM/DD HH:mm" from an RFC3339 timestamp (local time)
@@ -413,6 +421,26 @@ export function Daily() {
       setLiveError(e instanceof Error ? e.message : String(e));
     }
   }
+  // Which schedule is being launched by hand, so the row can say so. Firing a
+  // schedule is not a scheduling question: waiting for a cron to come round was
+  // the only way to try one, and the per-minute tick is aligned to when the
+  // process started, so a schedule saved seconds after its tick simply did not
+  // run and nothing said why.
+  const [runningNow, setRunningNow] = useState<string | null>(null);
+  async function runScheduleNow(id: string) {
+    if (runningNow) return;
+    setRunningNow(id);
+    setLiveError(null);
+    try {
+      await schedulesApi.runNow(id);
+      await Promise.all([refreshSchedules(), refreshRuns()]);
+    } catch (e) {
+      setLiveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunningNow(null);
+    }
+  }
+
   async function removeLiveSchedule(id: string) {
     try {
       await schedulesApi.remove(id);
@@ -610,7 +638,13 @@ export function Daily() {
     let runSpec: unknown;
     const boundTemplateRef = draftTemplateRef || templateChoices[0]?.ref || "";
     if (boundTemplateRef) {
-      const task = draftGoal.trim() || draftName.trim() || t("daily.untitledSchedule");
+      // Everything the form collected, not just the goal — the milestones are
+      // acceptance criteria the agents have to be told about.
+      const task = scheduleTask({
+        name: draftName.trim(),
+        goal: draftGoal.trim(),
+        milestones: milestones.map((title) => ({ title })),
+      }) || t("daily.untitledSchedule");
       const c = compileRef(boundTemplateRef, tplStores, task);
       if (c && c.stages.length > 0) {
         templateLabel = c.label;
@@ -681,7 +715,10 @@ export function Daily() {
                   <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     <div style={{ width: 8, height: 8, borderRadius: 2, background: kindColor(kind) }} />
                     <span onClick={() => editSchedule(s)} title={t("common.edit")} style={{ font: "600 12px 'IBM Plex Sans'", color: "var(--tx2)", cursor: "pointer" }}>{s.name}</span>
-                    <div onClick={() => editSchedule(s)} title={t("common.edit")} style={{ marginLeft: "auto", cursor: "pointer", font: "500 9.5px 'IBM Plex Mono'", color: "var(--ac)", padding: "0 4px" }}>{t("common.edit")}</div>
+                    <div onClick={() => runScheduleNow(s.id)} title={t("daily.runNowTip")} style={{ marginLeft: "auto", cursor: runningNow ? "default" : "pointer", opacity: runningNow && runningNow !== s.id ? 0.4 : 1, font: "500 9.5px 'IBM Plex Mono'", color: "var(--ac)", padding: "0 4px" }}>
+                      {runningNow === s.id ? t("daily.runningNow") : `▶ ${t("daily.runNow")}`}
+                    </div>
+                    <div onClick={() => editSchedule(s)} title={t("common.edit")} style={{ cursor: "pointer", font: "500 9.5px 'IBM Plex Mono'", color: "var(--ac)", padding: "0 4px" }}>{t("common.edit")}</div>
                     <div onClick={() => removeLiveSchedule(s.id)} title={t("common.delete")} style={{ cursor: "pointer", color: "var(--tx-mut)", font: "400 13px 'IBM Plex Sans'", padding: "0 2px" }}>✕</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, font: "500 10px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>

@@ -270,6 +270,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /schedules/update", s.handleScheduleUpdate)
 	mux.HandleFunc("DELETE /schedules", s.handleScheduleDelete)
 	mux.HandleFunc("POST /schedules/toggle", s.handleScheduleToggle)
+	mux.HandleFunc("POST /schedules/run", s.handleScheduleRun)
 	mux.HandleFunc("GET /daily/sources", s.handleSources)
 	mux.HandleFunc("POST /daily/sources/config", s.handleSourceConfigAdd)
 	mux.HandleFunc("DELETE /daily/sources/config", s.handleSourceConfigDelete)

@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { sectionTitle } from "./ui";
 import { useStore } from "@/store/useStore";
-import type { ToolDef, ToolParam } from "@/lib/tools";
+import type { ToolDef, ToolParam, ToolOutput } from "@/lib/tools";
+
+type OutKind = ToolOutput["kind"];
 
 const input: React.CSSProperties = { background: "var(--bg-deep)", border: "1px solid var(--bd2)", borderRadius: 7, padding: "8px 11px", font: "500 12px 'IBM Plex Sans'", color: "var(--tx)", outline: "none", width: "100%", boxSizing: "border-box" };
 const mono: React.CSSProperties = { ...input, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11 };
@@ -47,13 +49,45 @@ function ToolModal({ base, onClose }: { base: ToolDef | null; onClose: () => voi
   const [headers, setHeaders] = useState(headersToText(base?.headers ?? {}));
   const [body, setBody] = useState(base?.body ?? "");
   const [target, setTarget] = useState(base?.targetHeader ?? "");
+  // What the response becomes. A text tool answers the model; an artifact tool
+  // writes the bytes into /work and tells the model only where they went —
+  // which is the only way a tool can produce an image, since base64 through the
+  // model's context is both truncated and undecodable by write_file.
+  const [outKind, setOutKind] = useState<OutKind>(base?.output?.kind ?? "text");
+  const [jsonPath, setJsonPath] = useState(base?.output?.jsonPath ?? "");
+  const [exts, setExts] = useState((base?.output?.extensions ?? []).join(", "));
+  const [defaults, setDefaults] = useState(headersToText(base?.defaults ?? {}));
+  const [poll, setPoll] = useState(!!base?.output?.poll);
+  const [pollDone, setPollDone] = useState((base?.output?.poll?.done ?? ["completed"]).join(", "));
+  const [pollFail, setPollFail] = useState((base?.output?.poll?.fail ?? ["failed", "cancelled"]).join(", "));
+  const [pollStatusUrl, setPollStatusUrl] = useState(base?.output?.poll?.statusUrl ?? "/{{id}}");
+  const [pollResultUrl, setPollResultUrl] = useState(base?.output?.poll?.resultUrl ?? "/{{id}}/content");
 
   const setParam = (i: number, patch: Partial<ToolParam>) =>
     setParams((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
 
   const save = () => {
     const id = base?.id ?? slug(name || "tool");
-    upsert({ id, name: name.trim() || "tool", description, params: params.filter((p) => p.name.trim()), method, path: path.trim(), headers: textToHeaders(headers), body, targetHeader: target.trim() });
+    const list = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
+    const defs = textToHeaders(defaults);
+    upsert({
+      id, name: name.trim() || "tool", description,
+      params: params.filter((p) => p.name.trim()),
+      method, path: path.trim(), headers: textToHeaders(headers), body, targetHeader: target.trim(),
+      ...(Object.keys(defs).length ? { defaults: defs } : {}),
+      // Absent for a text tool, so its stored shape is exactly what it was
+      // before artifact outputs existed.
+      ...(outKind === "text" ? {} : {
+        output: {
+          kind: outKind,
+          ...(outKind === "base64" ? { jsonPath: jsonPath.trim() } : {}),
+          ...(list(exts).length ? { extensions: list(exts) } : {}),
+          ...(poll ? { poll: { idPath: "id", statusPath: "status", errorPath: "error",
+                               done: list(pollDone), fail: list(pollFail),
+                               statusUrl: pollStatusUrl.trim(), resultUrl: pollResultUrl.trim() } } : {}),
+        },
+      }),
+    });
     onClose();
   };
 
@@ -104,7 +138,50 @@ function ToolModal({ base, onClose }: { base: ToolDef | null; onClose: () => voi
 
           <Lbl label={t("settings.tools.fieldHeaders", { tpl: TPL })}><textarea value={headers} onChange={(e) => setHeaders(e.target.value)} spellCheck={false} style={{ ...mono, height: 52, resize: "vertical" }} /></Lbl>
           <Lbl label={t("settings.tools.fieldBody", { tpl: TPL })}><textarea value={body} onChange={(e) => setBody(e.target.value)} spellCheck={false} placeholder={`{"text":"{{text}}"}`} style={{ ...mono, height: 60, resize: "vertical" }} /></Lbl>
+          <Lbl label={t("settings.tools.fieldDefaults", { tpl: TPL })}><textarea value={defaults} onChange={(e) => setDefaults(e.target.value)} spellCheck={false} placeholder="voice: alloy" style={{ ...mono, height: 40, resize: "vertical" }} /></Lbl>
           <Lbl label={t("settings.tools.fieldTarget")}><input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="https://{{host}}/…" style={mono} /></Lbl>
+
+          {/* Output binding. This is what lets one mechanism cover both "tell
+              the model something" and "make a file" — generation is no longer
+              a separate, vendor-shaped feature. */}
+          <Lbl label={t("settings.tools.fieldOutput")}>
+            <div style={{ display: "flex", gap: 6 }}>
+              {(["text", "base64", "binary"] as OutKind[]).map((k) => (
+                <div key={k} onClick={() => setOutKind(k)} title={t(`settings.tools.output.${k}.hint`)}
+                  style={{ flex: 1, textAlign: "center", cursor: "pointer", font: "500 10.5px 'IBM Plex Mono'", padding: "6px 8px", borderRadius: 7,
+                    color: outKind === k ? "#06121e" : "var(--tx3)", background: outKind === k ? "var(--ac)" : "var(--bg-card2)",
+                    border: `1px solid ${outKind === k ? "var(--ac)" : "var(--bd2)"}` }}>
+                  {t(`settings.tools.output.${k}.label`)}
+                </div>
+              ))}
+            </div>
+          </Lbl>
+          {outKind !== "text" && (
+            <>
+              {outKind === "base64" && (
+                <Lbl label={t("settings.tools.fieldJsonPath")}>
+                  <input value={jsonPath} onChange={(e) => setJsonPath(e.target.value)} placeholder="data.0.b64_json" style={mono} />
+                </Lbl>
+              )}
+              <Lbl label={t("settings.tools.fieldExtensions")}>
+                <input value={exts} onChange={(e) => setExts(e.target.value)} placeholder=".png, .jpg, .webp" style={mono} />
+              </Lbl>
+              <div onClick={() => setPoll((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
+                <div style={{ width: 13, height: 13, borderRadius: 4, border: `1px solid ${poll ? "var(--ac)" : "var(--bd2)"}`, background: poll ? "var(--ac)" : "transparent" }} />
+                <span style={{ font: "500 10.5px 'IBM Plex Sans'", color: "var(--tx3)" }}>{t("settings.tools.pollLabel")}</span>
+                <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.tools.pollHint")}</span>
+              </div>
+              {poll && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <Lbl label={t("settings.tools.pollDone")}><input value={pollDone} onChange={(e) => setPollDone(e.target.value)} style={mono} /></Lbl>
+                  <Lbl label={t("settings.tools.pollFail")}><input value={pollFail} onChange={(e) => setPollFail(e.target.value)} style={mono} /></Lbl>
+                  <Lbl label={t("settings.tools.pollStatusUrl")}><input value={pollStatusUrl} onChange={(e) => setPollStatusUrl(e.target.value)} style={mono} /></Lbl>
+                  <Lbl label={t("settings.tools.pollResultUrl")}><input value={pollResultUrl} onChange={(e) => setPollResultUrl(e.target.value)} style={mono} /></Lbl>
+                </div>
+              )}
+              <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.tools.artifactNote")}</span>
+            </>
+          )}
           <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.tools.gatewayNote")}</span>
         </div>
         <div style={{ padding: "13px 20px", borderTop: "1px solid var(--bd)", display: "flex", gap: 10, justifyContent: "flex-end" }}>

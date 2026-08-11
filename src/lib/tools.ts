@@ -11,6 +11,49 @@ export interface ToolParam {
   required: boolean;
 }
 
+/** What a tool's response becomes.
+ *
+ *  A tool that answers with information returns its body to the model. A tool
+ *  that MAKES something cannot — a generated image is hundreds of kilobytes of
+ *  base64, and the model could only hand it to write_file, which would write
+ *  the string rather than the bytes it encodes. An artifact output decodes the
+ *  response and writes it into /work instead, and the model is told only where
+ *  the file went.
+ *
+ *  This is what makes image / speech / video generation ordinary tools rather
+ *  than a second mechanism hardcoded to one vendor's request and response
+ *  shapes. */
+export interface ToolOutput {
+  /** "text" (default) returns the body to the model; "binary" writes the body
+   *  itself; "base64" writes the decoded value found at jsonPath. */
+  kind: "text" | "binary" | "base64";
+  /** Where the payload sits in a JSON response, dot-separated, numeric segments
+   *  indexing arrays — "data.0.b64_json", "predictions.0.bytesBase64Encoded". */
+  jsonPath?: string;
+  /** Extensions the model's chosen output path must end in. A generated file
+   *  that lands as `.sh` is not an artifact, so the tool refuses. */
+  extensions?: string[];
+  /** Set for an asynchronous job: create, poll, then download. */
+  poll?: ToolPoll;
+}
+
+/** The create → poll → download shape long generations use. The tool call is
+ *  held open across the wait rather than handing the model a job id it would
+ *  have to remember to check. */
+export interface ToolPoll {
+  idPath?: string;      // default "id"
+  statusPath?: string;  // default "status"
+  errorPath?: string;   // default "error"
+  done?: string[];      // statuses meaning finished
+  fail?: string[];      // statuses meaning gave up
+  /** Appended to the tool path with {{id}} substituted. Defaults "/{{id}}" and
+   *  "/{{id}}/content". */
+  statusUrl?: string;
+  resultUrl?: string;
+  everySec?: number;
+  forSec?: number;
+}
+
 export interface ToolDef {
   id: string;
   name: string;
@@ -23,6 +66,15 @@ export interface ToolDef {
   body: string;
   /** For /fetch dynamic targets (X-Orchestra-Target). */
   targetHeader: string;
+  /** Values for optional params the model leaves out. Its own argument wins. */
+  defaults?: Record<string, string>;
+  /** Absent => a text tool, the historical behaviour. */
+  output?: ToolOutput;
+}
+
+/** Whether a tool writes a file rather than answering the model in text. */
+export function producesArtifact(t: Pick<ToolDef, "output">): boolean {
+  return t.output?.kind === "binary" || t.output?.kind === "base64";
 }
 
 /** JSON-schema `input_schema` advertised to the model, built from params. */
@@ -49,6 +101,8 @@ export interface CompiledTool {
   headers: Record<string, string>;
   body: string;
   targetHeader: string;
+  defaults?: Record<string, string>;
+  output?: ToolOutput;
 }
 
 /** Built-in RAG search tool (knowledge base via the gateway's /rag route). It is
@@ -86,5 +140,9 @@ export function compileTool(t: ToolDef): CompiledTool {
     headers: t.headers ?? {},
     body: t.body ?? "",
     targetHeader: t.targetHeader ?? "",
+    // Only carried when set: a text tool's wire shape is unchanged, so an
+    // agent built before artifact outputs existed still sees what it saw.
+    ...(t.defaults && Object.keys(t.defaults).length ? { defaults: t.defaults } : {}),
+    ...(producesArtifact(t) ? { output: t.output } : {}),
   };
 }

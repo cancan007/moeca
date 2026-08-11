@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileSolo, compileGraph, compileSupervisor } from "./compileTemplate";
 import type { SoloAgent, GraphTemplate, SupervisorTemplate } from "@/lib/templates";
+import type { ToolDef } from "@/lib/tools";
 import type { ProviderInput } from "@/lib/providers";
 
 // Compiling a template down to the Stage DAG is the seam where an authored
@@ -136,5 +137,43 @@ describe("web search grant", () => {
   it("is absent for an agent that was never granted it", () => {
     const [stage] = compileSolo(agent("builder"), providers, [], "t");
     expect(stage.web).toBeUndefined();
+  });
+});
+
+// Generation is a tool now, so it routes wherever its own definition says —
+// independently of the provider the agent reasons with. It used to inherit the
+// agent's prefix, so a Claude agent asked for gpt-image-1 at
+// /anthropic/v1/images/generations, an endpoint that does not exist.
+describe("artifact tools route independently of the agent's own provider", () => {
+  const multi: ProviderInput[] = [
+    ...providers,
+    { name: "openai", kind: "model", dialect: "openai", prefix: "/openai/", upstream: "https://api.openai.com", allowlist: [], models: ["gpt-4o"], injectHeaders: {} },
+  ];
+  const imageTool: ToolDef = {
+    id: "gen-image", name: "generate_image", description: "draw",
+    params: [{ name: "prompt", type: "string", description: "", required: true }],
+    method: "POST", path: "/openai/v1/images/generations", headers: {},
+    body: '{"model":"gpt-image-1","prompt":"{{prompt}}"}', targetHeader: "",
+    output: { kind: "base64", jsonPath: "data.0.b64_json", extensions: [".png"] },
+  };
+
+  it("keeps the tool's own route while the agent thinks with another provider", () => {
+    const solo = { ...agent("designer"), toolIds: ["gen-image"] } as SoloAgent;
+    const [stage] = compileSolo(solo, multi, [imageTool], "犬の画像を作る");
+
+    expect(stage.providerPrefix).toBe("/anthropic/"); // reasoning stays on Claude
+    const tool = stage.tools?.find((t) => t.name === "generate_image");
+    expect(tool?.path).toBe("/openai/v1/images/generations"); // generation does not
+    expect(tool?.output?.kind).toBe("base64");
+    expect(tool?.output?.jsonPath).toBe("data.0.b64_json");
+  });
+
+  // A text tool's compiled shape is unchanged, so an agent that predates
+  // artifact outputs sees exactly what it saw.
+  it("carries no output field for an ordinary tool", () => {
+    const plain: ToolDef = { ...imageTool, id: "ping", name: "ping", output: undefined };
+    const solo = { ...agent("caller"), toolIds: ["ping"] } as SoloAgent;
+    const [stage] = compileSolo(solo, multi, [plain], "t");
+    expect(stage.tools?.[0]?.output).toBeUndefined();
   });
 });

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "@/store/useStore";
 import { soloSystem, type SoloAgent } from "@/lib/templates";
-import { schedules as schedulesApi } from "@/lib/schedules";
+import { schedules as schedulesApi, scheduleTask } from "@/lib/schedules";
 import { compileRef, buildRunSpec, type TemplateStores } from "@/lib/agentTemplates";
 
 // resolve the solos (granularities) a template ref is built from.
@@ -67,7 +67,9 @@ export function RunOptimizer({
       const stores: TemplateStores = { ...st, solos: newSolos };
       const all = await schedulesApi.list().catch(() => []);
       for (const sc of all.filter((s) => s.templateRef === templateRef)) {
-        const task = sc.goal || sc.name;
+        // Same composition the editor uses, so re-syncing a schedule after a
+        // prompt edit cannot quietly drop its milestones from the task.
+        const task = scheduleTask(sc);
         const c = compileRef(sc.templateRef, stores, task);
         await schedulesApi.update(sc.id, {
           name: sc.name, cron: sc.cron, perspective: sc.perspective,

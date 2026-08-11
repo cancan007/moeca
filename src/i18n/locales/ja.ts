@@ -211,6 +211,22 @@ export const ja = {
     },
 
     tools: {
+      fieldDefaults: "既定値（省略時に使う値。{{tpl}} 不可・1行1件）",
+      fieldOutput: "応答の扱い",
+      output: {
+        text: { label: "テキスト", hint: "本文をモデルに返す（従来どおり）" },
+        base64: { label: "base64 → ファイル", hint: "JSON 内の base64 をデコードして /work に書き出す" },
+        binary: { label: "バイナリ → ファイル", hint: "本文をそのまま /work に書き出す" },
+      },
+      fieldJsonPath: "データの位置（応答 JSON 内・ドット区切り）",
+      fieldExtensions: "許可する拡張子（カンマ区切り・出力先を検証）",
+      pollLabel: "非同期ジョブ",
+      pollHint: "作成 → 完了までポーリング → 取得",
+      pollDone: "完了とみなす status",
+      pollFail: "失敗とみなす status",
+      pollStatusUrl: "状態取得パス（パスに追加）",
+      pollResultUrl: "結果取得パス（パスに追加）",
+      artifactNote: "ファイル出力のツールには path 引数が自動で追加され、必須になります。応答本文はモデルには渡らず、書き出し先だけが返ります。",
       desc: "エージェントに持たせるカスタムツール（gateway 経由の HTTP 呼び出し）を一括管理。各 Solo エージェントで使用ツールを選択します。鍵は Proxy のプロバイダが注入し、ツール自体は持ちません。",
       registered: "登録済みツール",
       addTool: "ツール追加",
@@ -495,6 +511,8 @@ export const ja = {
   },
 
   runs: {
+    producedNothing: "成果物なし",
+    producedNothingWhy: "全ステージが正常終了しましたが、ファイルは1つも作られませんでした。エージェントが文章で答えて終わった可能性があります（ログとステージの引き継ぎを確認してください）。",
     optimizeTitle: "システムプロンプト最適化",
     noEditableGranularity: "編集可能な粒度が見つかりません（テンプレートが削除された可能性があります）。",
     savingSync: "保存＋再同期中…",
@@ -504,6 +522,10 @@ export const ja = {
   },
 
   daily: {
+    runNow: "実行",
+    runNowTip: "cron を待たずに今すぐ実行します（停止中でも可）",
+    runningNow: "起動中…",
+    acceptanceCriteria: "満たすべき条件:",
     galleryTitle: "成果物ギャラリー",
     calendarTitle: "スケジュールカレンダー",
     gallery: "ギャラリー",
@@ -515,7 +537,7 @@ export const ja = {
 
     perspective: { discovery: "新発見", contextOpt: "最適化", automation: "自動化" },
     perspectiveLabel: "観点",
-    runState: { executed: "実行", failed: "失敗", missed: "未実行", scheduled: "予定" },
+    runState: { executed: "実行中", failed: "失敗", missed: "未実行", scheduled: "予定", done: "完了", empty: "成果物なし" },
     weekdaysShort: { sun: "日", mon: "月", tue: "火", wed: "水", thu: "木", fri: "金", sat: "土" },
     cron: {
       everyDay: "毎日 {{at}}",
@@ -705,6 +727,23 @@ export const ja = {
   },
 
   tools: {
+    media: {
+      image: {
+        description: "指示から画像を生成し、/work にファイルとして書き出す。",
+        prompt: "生成したい画像の詳細な説明。画像モデルに渡る唯一の指示。",
+        size: "任意。ピクセルサイズ（例 1024x1024）。",
+      },
+      speech: {
+        description: "テキストから音声を合成し、/work にファイルとして書き出す。",
+        text: "読み上げるテキスト。",
+        voice: "任意。音声名（プロバイダ固有）。",
+      },
+      video: {
+        description: "指示から動画を生成し、/work にファイルとして書き出す。数分かかり、最も高価なツール。",
+        prompt: "生成したい動画の内容。",
+        seconds: "任意。長さ（秒）。",
+      },
+    },
     ragSearch: {
       description: "登録済みナレッジベースを検索し、関連する文書チャンクを取得する。事実確認や仕様参照に使う。",
       query: "検索クエリ（自然文可）",
@@ -853,9 +892,11 @@ export const ja = {
     dynamic:
       "# meta-orchestrator\n\nあなたはルータ兼オーケストレータです。\n\n1. プロンプトの複雑度・種別を分類する。\n2. 単純: Solo を1体だけ選ぶ。\n3. 定型の多工程: 該当 Static テンプレートを起動する。\n4. 非定型: 必要な Solo を最小構成で合成する。\n5. 再現性より柔軟性を優先し、選択理由を記録する。",
     supervisor:
-      "あなたは司令塔です。タスクを worker に分解し、各 worker の担当と受け入れ条件を .orchestra/plan.md に明記してください。自らは実装しません。",
-    worker: ".orchestra/plan.md のあなたの担当範囲のみを実装してください。",
-    integrate: "各 worker の成果物を統合し、矛盾を解消して最終成果にまとめてください。",
+      "あなたは司令塔です。タスクを worker に分解し、各 worker の担当と受け入れ条件を最終メッセージに明記してください。その内容は後続の worker に自動で引き渡されます。自らは実装しません。",
+    worker:
+      "上流ステージから引き渡された担当範囲のみを実装してください。成果物は必ず write_file か生成ツールでファイルとして /work に書き出すこと — 文章で答えただけでは成果物になりません。",
+    integrate:
+      "各 worker の成果物を統合し、矛盾を解消して最終成果にまとめてください。統合結果はファイルとして /work に書き出してください。",
     router:
       "利用可能なテンプレート:\n{{list}}\n\nタスクに最適なテンプレートを1つ選び、write_file で `.orchestra/route` に**そのテンプレートIDだけ**を書き込んでください（他の内容は書かない）。書き終えたら終了してください。",
   },

@@ -413,6 +413,16 @@ func TestStageFailsClearlyWhenTheImageCannotBeResolved(t *testing.T) {
 	if run["status"] != statusFailed {
 		t.Errorf("run status = %v, want failed", run["status"])
 	}
+	// The reason has to reach the stage. There is no container and therefore no
+	// container log, so if this is dropped the run reports nothing but
+	// exitCode -1 and the cause has to be guessed from what is missing.
+	stages, _ := run["stages"].([]any)
+	st, _ := stages[0].(map[string]any)
+	msg, _ := st["error"].(string)
+	if !strings.Contains(msg, "manifest unknown") {
+		t.Errorf("stage error = %q, want it to carry the docker failure", msg)
+	}
+
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	if len(fake.created) != 0 {

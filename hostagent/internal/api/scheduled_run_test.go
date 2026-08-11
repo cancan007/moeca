@@ -201,3 +201,102 @@ func TestScheduledRunOverridesAnUnrunnableStoredSpec(t *testing.T) {
 		t.Errorf("unattended = %v, want true", body["unattended"])
 	}
 }
+
+// Running a schedule by hand.
+//
+// Testing one used to mean editing its cron to a minute in the near future and
+// waiting — a race, because the per-minute tick is aligned to when the process
+// started rather than to the wall clock. A schedule saved three seconds after
+// its minute's tick simply does not fire, and nothing says why.
+
+func postRun(t *testing.T, srv *httptest.Server, id string) (int, map[string]any) {
+	t.Helper()
+	res, err := http.Post(srv.URL+"/schedules/run", "application/json",
+		strings.NewReader(`{"id":"`+id+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out map[string]any
+	json.NewDecoder(res.Body).Decode(&out)
+	return res.StatusCode, out
+}
+
+func TestRunNowLaunchesWithoutWaitingForCron(t *testing.T) {
+	var called bool
+	s, _ := dailyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/run" {
+			called = true
+			w.WriteHeader(201)
+			w.Write([]byte(`{"runId":"r-manual"}`))
+			return
+		}
+		w.WriteHeader(500)
+	})
+	sc, _ := s.store.Create(&store.Schedule{
+		Name: "daily", Cron: "0 3 * * *", Active: true,
+		RunSpec: []byte(`{"stages":[{"id":"a"}]}`),
+	})
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	code, out := postRun(t, srv, sc.ID)
+	if code != 202 {
+		t.Fatalf("status = %d, want 202", code)
+	}
+	if !called {
+		t.Fatal("the orchestrator was not called")
+	}
+	if out["runId"] != "r-manual" {
+		t.Errorf("runId = %v", out["runId"])
+	}
+	// It belongs in the history like any other run: that is where the operator
+	// looks for what it produced.
+	runs, _ := s.store.Runs(0)
+	if len(runs) != 1 || runs[0].RunID != "r-manual" {
+		t.Fatalf("occurrence not recorded: %+v", runs)
+	}
+}
+
+// Pausing stops the clock from firing a schedule. Running it by hand is exactly
+// what someone does before turning the clock back on.
+func TestRunNowWorksOnAPausedSchedule(t *testing.T) {
+	s, _ := dailyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(201)
+		w.Write([]byte(`{"runId":"r1"}`))
+	})
+	sc, _ := s.store.Create(&store.Schedule{
+		Name: "paused", Cron: "0 3 * * *", Active: false,
+		RunSpec: []byte(`{"stages":[{"id":"a"}]}`),
+	})
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	if code, _ := postRun(t, srv, sc.ID); code != 202 {
+		t.Errorf("status = %d, want 202 for a paused schedule", code)
+	}
+}
+
+func TestRunNowRefusesASchedulesWithNoTemplate(t *testing.T) {
+	s, _ := dailyServer(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(201) })
+	sc, _ := s.store.Create(&store.Schedule{Name: "bare", Cron: "0 3 * * *", Active: true})
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	code, out := postRun(t, srv, sc.ID)
+	if code != 400 {
+		t.Fatalf("status = %d, want 400", code)
+	}
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "template") {
+		t.Errorf("error = %q, want it to name the missing template", msg)
+	}
+}
+
+func TestRunNowRejectsAnUnknownSchedule(t *testing.T) {
+	s, _ := dailyServer(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(201) })
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	if code, _ := postRun(t, srv, "nope"); code != 404 {
+		t.Errorf("status = %d, want 404", code)
+	}
+}

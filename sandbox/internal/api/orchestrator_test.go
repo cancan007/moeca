@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -208,5 +209,88 @@ func TestRun_ValidationErrors(t *testing.T) {
 	}
 	if _, code := startRun(t, srv, map[string]any{"taskId": "t", "worktreePath": "/w", "stages": []map[string]any{}}); code != 400 {
 		t.Errorf("empty stages = %d, want 400", code)
+	}
+}
+
+// A stage is told which stages it builds on, so the agent can read their
+// handoff manifests off the worktree. Only the controller knows the DAG; the
+// alternative was telling the agent in a prompt to go read an agreed filename,
+// a convention nothing enforced and whose absence read as a failed file read.
+func TestStageIsToldWhichStagesItDependsOn(t *testing.T) {
+	fake := &fakeDocker{}
+	srv := newTest(&Config{Image: "img"}, fake)
+	defer srv.Close()
+
+	id, code := startRun(t, srv, chainReq(stage("a"), stage("b"), stage("c", "a", "b")))
+	if code != 201 {
+		t.Fatalf("create status = %d", code)
+	}
+	waitRun(t, srv, id)
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, spec := range fake.created {
+		up := spec.Env["ORCHESTRA_UPSTREAM"]
+		switch {
+		case strings.HasSuffix(spec.TaskID, "-c"):
+			if up != "a,b" {
+				t.Errorf("stage c upstream = %q, want \"a,b\"", up)
+			}
+		default:
+			// A root stage has nothing upstream; an empty var would make the
+			// agent render a section describing nothing.
+			if up != "" {
+				t.Errorf("%s upstream = %q, want empty", spec.TaskID, up)
+			}
+		}
+	}
+}
+
+// A tool reaches the agent exactly as the template wrote it. The controller has
+// no opinion about what a tool consists of, and a struct here would not merely
+// fail to understand a new field — it would delete it. That is precisely what
+// happened to the artifact output binding: image generation arrived as an
+// ordinary text tool, was called on the 30-second client, and timed out instead
+// of producing a picture.
+func TestToolsReachTheAgentWithEveryFieldIntact(t *testing.T) {
+	fake := &fakeDocker{}
+	srv := newTest(&Config{Image: "img"}, fake)
+	defer srv.Close()
+
+	st := stage("a")
+	st["tools"] = []map[string]any{{
+		"name":   "generate_image",
+		"method": "POST",
+		"path":   "/openai/v1/images/generations",
+		"body":   `{"prompt":"{{prompt}}"}`,
+		// Fields the controller has never heard of, and must still forward.
+		"defaults": map[string]any{"size": "1024x1024"},
+		"output": map[string]any{
+			"kind":       "base64",
+			"jsonPath":   "data.0.b64_json",
+			"extensions": []any{".png"},
+		},
+	}}
+	id, code := startRun(t, srv, chainReq(st))
+	if code != 201 {
+		t.Fatalf("create status = %d", code)
+	}
+	waitRun(t, srv, id)
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.created) != 1 {
+		t.Fatalf("created %d containers", len(fake.created))
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(fake.created[0].Env["ORCHESTRA_TOOLS"]), &got); err != nil {
+		t.Fatalf("ORCHESTRA_TOOLS is not a tool list: %v", err)
+	}
+	out, _ := got[0]["output"].(map[string]any)
+	if out == nil || out["kind"] != "base64" || out["jsonPath"] != "data.0.b64_json" {
+		t.Errorf("the output binding did not survive: %v", got[0]["output"])
+	}
+	if got[0]["defaults"] == nil {
+		t.Errorf("defaults did not survive: %v", got[0])
 	}
 }

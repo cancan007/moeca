@@ -26,6 +26,14 @@ export function RunArtifacts({ run, onClose, onOptimize }: { run: RunRecord; onC
   const [logs, setLogs] = useState("");
   const [tab, setTab] = useState<"files" | "logs">("files");
   const [err, setErr] = useState<string | null>(null);
+  // Stages that failed without ever getting a container. They produce no files
+  // and no logs, so with nothing shown here the drawer is simply empty and the
+  // run looks like it did nothing rather than like it could not start.
+  const [failures, setFailures] = useState<{ name: string; error: string }[]>([]);
+  // A finished run that wrote nothing. Not a failure — nothing errored — but
+  // not a success either, and an empty file list alone cannot tell the operator
+  // which of the two they are looking at.
+  const [producedNothing, setProducedNothing] = useState(false);
 
   const open = async (p: string) => {
     setActive(p);
@@ -51,6 +59,13 @@ export function RunArtifacts({ run, onClose, onOptimize }: { run: RunRecord; onC
       sandboxApi
         .runLogs(run.runId)
         .then((r) => setLogs(Object.entries(r.logs).map(([stage, log]) => `── ${stage} ──\n${log}`).join("\n\n")))
+        .catch(() => {});
+      sandboxApi
+        .runStatus(run.runId)
+        .then((s) => {
+          setFailures(s.stages.filter((st) => st.error).map((st) => ({ name: st.name || st.id, error: st.error! })));
+          setProducedNothing(s.status === "done" && (s.artifacts?.length ?? 0) === 0);
+        })
         .catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -79,6 +94,18 @@ export function RunArtifacts({ run, onClose, onOptimize }: { run: RunRecord; onC
           <div onClick={onClose} style={{ cursor: "pointer", color: "var(--tx-mut)", font: "400 18px 'IBM Plex Sans'", padding: "0 4px" }}>✕</div>
         </div>
         {err && <div style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--red)", padding: "8px 18px" }}>{err}</div>}
+        {producedNothing && (
+          <div style={{ display: "flex", gap: 8, padding: "8px 18px", borderBottom: "1px solid var(--bd)", background: "var(--bg-inset2)" }}>
+            <span style={{ font: "600 10px 'IBM Plex Mono'", color: "#d39a4e", flex: "none" }}>{t("runs.producedNothing")}</span>
+            <span style={{ font: "400 10px/1.6 'IBM Plex Mono'", color: "var(--tx3)" }}>{t("runs.producedNothingWhy")}</span>
+          </div>
+        )}
+        {failures.map((f) => (
+          <div key={f.name} style={{ display: "flex", gap: 8, padding: "8px 18px", borderBottom: "1px solid var(--bd)", background: "var(--bg-inset2)" }}>
+            <span style={{ font: "600 10px 'IBM Plex Mono'", color: "var(--red)", flex: "none" }}>{f.name}</span>
+            <span style={{ font: "400 10px/1.6 'IBM Plex Mono'", color: "var(--tx3)", wordBreak: "break-word" }}>{f.error}</span>
+          </div>
+        ))}
 
         {tab === "files" && (
           <div style={{ flex: 1, minHeight: 0, display: "flex" }}>

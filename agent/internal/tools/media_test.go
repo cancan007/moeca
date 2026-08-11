@@ -179,9 +179,9 @@ func TestGenerateVideoPollsThenDownloads(t *testing.T) {
 
 	r, work := mediaRegistry(t, srv.URL, MediaConfig{Video: &MediaSpec{Prefix: "/openai", Model: "sora-2"}})
 	// Keep the test quick; the production cadence is deliberately slow.
-	old := videoPollEvery
-	videoPollEvery = time.Millisecond
-	defer func() { videoPollEvery = old }()
+	old := pollEvery
+	pollEvery = time.Millisecond
+	defer func() { pollEvery = old }()
 
 	out, isErr := r.Dispatch("generate_video", map[string]any{"prompt": "a demo", "path": "artifacts/demo.mp4"})
 	if isErr {

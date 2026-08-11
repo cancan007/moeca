@@ -85,10 +85,20 @@ export interface RunSpec {
 
 /** One generation route: a gateway prefix plus the model to ask for. Defaults
  *  (voice, size, duration) are per-template so a run does not depend on the
- *  model guessing them. */
+ *  model guessing them.
+ *
+ *  The route is the grant's own, not the agent's. Generation models are a
+ *  different catalogue from chat models — an image model is not something any
+ *  chat provider also serves — so binding this prefix to whichever provider the
+ *  agent thinks with made "reason with Claude, draw with OpenAI" impossible to
+ *  express, and quietly produced /anthropic/v1/images/generations. */
 export interface MediaSpec {
   prefix: string;
   model: string;
+  /** Which configured provider `prefix` came from, so the editor can show the
+   *  choice and re-stamp the prefix if that provider's route changes. Absent in
+   *  grants stored before the provider was selectable. */
+  providerId?: string;
   path?: string;
   voice?: string;
   size?: string;
@@ -131,6 +141,10 @@ export interface StageState {
   containerId: string;
   status: StageStatus;
   exitCode: number;
+  /** Why the stage failed before it had a container — an image that would not
+   *  resolve, a container that would not start. Such a failure leaves no
+   *  container log, so this is the only account of it. */
+  error?: string;
   /** The commit recording this stage's output, the commit it built on, and the
    *  files it touched. Absent when the stage changed nothing. */
   commit?: string;
@@ -149,6 +163,11 @@ export interface RunStatus {
   status: "running" | "done" | "failed" | "stopped";
   maxParallel: number;
   stages: StageState[];
+  /** The files the run's stages reported writing, once it is terminal. Empty on
+   *  a run that produced nothing — a different fact from a run that failed, and
+   *  one `status` alone cannot carry: every stage can exit 0 and leave the
+   *  output directory empty. */
+  artifacts?: string[];
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {

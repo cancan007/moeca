@@ -176,16 +176,38 @@ can be given **custom HTTP tools** and a **`rag_search`** tool (via `ORCHESTRA_T
 **through the gateway**, so the allowlist / SSRF-deny / write-authz / key-injection apply and the agent
 still holds no keys.
 
-It can also be granted **media generation** (via `ORCHESTRA_MEDIA`): `generate_image`,
-`generate_speech` and `generate_video` write an image, a spoken track or a video into `/work`, where
-Delivery's **成果物** tab and Daily's gallery both pick it up. Until this existed the file tools wrote
-strings, so a task could only ever produce text. Each kind is a **separate grant** on the agent
-template — they differ by an order of magnitude in cost, and video especially has to be turned on
-deliberately. An unconfigured kind is an **absent tool**, not a disabled one. Generation is a model
-call like any other: routed through the gateway, keys injected there, recorded in the audit log with
-its run and stage, and stripped entirely from a networkless (`media`-policy) stage that could not
-reach an upstream anyway. The written path must carry an extension matching its kind — a generated
-file that lands as `.sh` is not an artifact.
+**Stage handoff is a contract, not a convention.** When a stage finishes, the runner — not the
+model — writes a manifest to `.orchestra/stages/<stageId>.json` carrying the agent's closing
+message, the files it actually wrote (recorded by the tools, not claimed by the model), and how
+the loop ended. The controller tells each stage which stages it builds on (`ORCHESTRA_UPSTREAM`,
+derived from the DAG), and the agent folds those manifests into its own prompt. So a dependency
+that produced nothing says so in words, instead of surfacing as a `read_file` error on some
+filename that a prompt once agreed on. Before this, a supervisor that answered in prose rather
+than writing the plan file left every stage exiting 0 and the worktree empty — the closing text
+was discarded, and the convention that would have caught it existed only inside a translated
+string. See [`agent/internal/handoff`](agent/internal/handoff/).
+
+It can also be granted **artifact tools** — the mechanism image, speech and video
+generation are built on. An ordinary gateway-routed HTTP tool answers the model with its
+response body; an artifact tool declares where the bytes are (`output.kind` = `binary`, or
+`base64` plus a JSON path), and the response never reaches the model at all: it is decoded,
+written into `/work`, and the model is told only the path it landed on. That is the only shape
+that can work — a generated image is hundreds of kilobytes of base64, past what a tool result
+keeps, and `write_file` would write the encoding rather than the bytes. The tool gains a
+required `path` argument automatically, and an extension whitelist refuses a "generated file"
+that would land as `.sh`. Asynchronous generation (video, everywhere) is a `poll` block:
+create, wait on a status field, download. Each is a **separate grant** on the agent template —
+they differ by an order of magnitude in cost, and video especially has to be turned on
+deliberately. Generation is a model call like any other: routed through the gateway, keys
+injected there, recorded in the audit log with its run and stage, and stripped from a
+networkless (`media`-policy) stage that could not reach an upstream anyway.
+
+Because the request body, the route and the response binding are all configuration, a provider
+that spells its API differently — Imagen's `instances`/`parameters`, a service that returns its
+bytes under another key — is a tool definition rather than a patch. The three shipped
+generation tools are seeded into Settings → Tools as editable presets. (`ORCHESTRA_MEDIA` is
+still accepted and compiles to the same artifact tools, so a schedule whose run spec was
+compiled before this keeps running.)
 
 It can also be granted **web search** (via `ORCHESTRA_WEB_SEARCH`), and this one is unlike every
 other tool: the agent does **not** run it. `web_search` is an Anthropic **server tool** — the agent

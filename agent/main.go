@@ -37,6 +37,7 @@ import (
 	"strings"
 
 	"orchestra/agent/internal/agent"
+	"orchestra/agent/internal/handoff"
 	"orchestra/agent/internal/llm"
 	"orchestra/agent/internal/prompt"
 	"orchestra/agent/internal/tools"
@@ -105,6 +106,15 @@ func run() error {
 		return fmt.Errorf("no task provided (set ORCHESTRA_TASK or write %s)",
 			filepath.Join(workdir, ".orchestra", "task.md"))
 	}
+	// What the stages this one depends on left behind, folded into the task.
+	// The controller names them (ORCHESTRA_UPSTREAM) because only it knows the
+	// DAG; the manifests themselves come off the shared worktree. Handing them
+	// over beats telling an agent in prose to go read some file: a dependency
+	// that produced nothing then says so, instead of surfacing as a read_file
+	// error the agent has to interpret.
+	if raw := strings.TrimSpace(os.Getenv("ORCHESTRA_UPSTREAM")); raw != "" {
+		task = handoff.Compose(task, handoff.Upstream(workdir, strings.Split(raw, ",")))
+	}
 
 	reg := tools.New(workdir)
 	// Forbidden-path policy ("path" scope): comma-separated globs (e.g. "*.pem")
@@ -171,6 +181,9 @@ func run() error {
 		LogW:             os.Stdout,
 		MaxContextTokens: maxContext,
 		KeepRecent:       keepRecent,
+		Workdir:          workdir,
+		StageID:          gctx.Stage,
+		RunID:            gctx.Run,
 	})
 
 	return runner.Run(context.Background())

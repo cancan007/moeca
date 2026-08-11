@@ -62,7 +62,16 @@ type Stage struct {
 	Cmd []string `json:"cmd"`
 	// Tools are custom HTTP tools (through the gateway) exposed to this stage's
 	// agent; forwarded verbatim as ORCHESTRA_TOOLS.
-	Tools []ToolDef `json:"tools"`
+	//
+	// Held as raw objects rather than a struct for the same reason as Media and
+	// Web: what a tool consists of is the agent's business and the template's,
+	// not the controller's. A struct here does not merely fail to understand a
+	// new field — it deletes it. That is what happened to the artifact output
+	// binding: the controller re-marshalled every tool through a shape that
+	// predated it, so the agent received image generation as an ordinary text
+	// tool, called it on a 30-second client, and got a timeout instead of a
+	// picture.
+	Tools []map[string]any `json:"tools"`
 	// Media enables the generation tools (image / speech / video) for this
 	// stage, forwarded verbatim as ORCHESTRA_MEDIA. Passed through opaquely for
 	// the same reason as Tools: what a provider's route is called is the
@@ -76,18 +85,6 @@ type Stage struct {
 	// per-stage grant, because searches are billed per use and because an agent
 	// that was not given the tool must not be able to reach for it.
 	Web map[string]any `json:"web,omitempty"`
-}
-
-// ToolDef mirrors the agent's HTTP tool shape; passed through opaquely.
-type ToolDef struct {
-	Name         string            `json:"name"`
-	Description  string            `json:"description"`
-	InputSchema  map[string]any    `json:"inputSchema"`
-	Method       string            `json:"method"`
-	Path         string            `json:"path"`
-	Headers      map[string]string `json:"headers"`
-	Body         string            `json:"body"`
-	TargetHeader string            `json:"targetHeader"`
 }
 
 type runReq struct {
@@ -134,6 +131,12 @@ type StageState struct {
 	ContainerID string   `json:"containerId"`
 	Status      string   `json:"status"`
 	ExitCode    int      `json:"exitCode"`
+	// Error is why the stage failed before (or instead of) producing an exit
+	// code — an image that would not resolve, a container that would not start,
+	// a worktree that could not be prepared. Those failures leave no container,
+	// so there is no log to read: without this the whole run reports nothing but
+	// exitCode -1, and the reason has to be reconstructed from what is missing.
+	Error string `json:"error,omitempty"`
 	// Image is the allowlist policy this stage ran under; ImageDigest is the
 	// immutable id that policy's reference resolved to at launch. A tag moves,
 	// so the digest is what makes "which bytes actually ran" answerable after
@@ -156,6 +159,12 @@ type Run struct {
 	Status      string        `json:"status"` // running/done/failed/stopped
 	MaxParallel int           `json:"maxParallel"`
 	Stages      []*StageState `json:"stages"`
+	// Artifacts are the worktree-relative files the run's stages wrote, as they
+	// reported them. Set once the run is terminal. Empty on a run that produced
+	// nothing — which is a different fact from a run that failed, and one the
+	// old status word could not express: every stage could exit 0 and leave the
+	// output directory empty.
+	Artifacts []string `json:"artifacts"`
 
 	mu          sync.Mutex
 	stageByID   map[string]*StageState
@@ -389,6 +398,12 @@ func (s *Server) executeRun(run *Run, stages map[string]Stage, worktree string, 
 		case res.err != nil:
 			st.Status = statusFailed
 			st.ExitCode = -1
+			st.Error = res.err.Error()
+			// Also to the controller's log: a stage that never got a container
+			// has no container log, and this is often an operator-fixable
+			// environment fault (docker missing, image gone) rather than
+			// anything the agent did.
+			log.Printf("sandbox: run %s stage %s failed to launch: %v", run.ID, res.id, res.err)
 			if stopOnFailure {
 				halt = true
 			}
@@ -432,9 +447,22 @@ func (s *Server) executeRun(run *Run, stages map[string]Stage, worktree string, 
 		}
 	}
 
+	// What the run made, from the stages' own manifests. Read before the status
+	// is published so a client that sees a terminal status sees the artifacts
+	// with it, rather than an empty list that fills in a moment later.
+	artifacts := collectArtifacts(worktree)
+
 	run.mu.Lock()
 	run.Status = status
+	run.Artifacts = artifacts
 	run.mu.Unlock()
+
+	if status == statusDone && len(artifacts) == 0 {
+		// Worth saying out loud: nothing failed, so nothing else will mention
+		// it, and an empty output directory is otherwise indistinguishable from
+		// a run that was never launched.
+		log.Printf("sandbox: run %s finished without producing any files", run.ID)
+	}
 
 	// Final snapshot: the terminal status and every stage's artifacts.
 	s.archiveRun(run)
@@ -528,6 +556,15 @@ func (s *Server) runStage(run *Run, stage Stage, worktree string, strict bool, o
 	// gateway so every model/tool/RAG call is tied to this run + stage.
 	env["ORCHESTRA_RUN"] = run.ID
 	env["ORCHESTRA_STAGE"] = stage.ID
+	// The stages this one builds on. Only the controller knows the DAG, so it
+	// names them; the agent reads their handoff manifests off the worktree and
+	// folds them into its prompt. Without this a dependent stage has to be told
+	// in prose to go read some agreed filename — a convention that lives only
+	// in a prompt, that nothing enforces, and whose absence looks to the agent
+	// like a failed read rather than an upstream that produced nothing.
+	if len(stage.DependsOn) > 0 {
+		env["ORCHESTRA_UPSTREAM"] = strings.Join(stage.DependsOn, ",")
+	}
 	// Runtime delegation budget: this stage's agent (depth 0) may spawn
 	// sub-agents up to maxDepth. The spawn tool is file-based (no host network).
 	if run.delegation {

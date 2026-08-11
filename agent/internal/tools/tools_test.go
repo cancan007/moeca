@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -230,5 +231,65 @@ func TestDefinitionsCoverAllTools(t *testing.T) {
 		if !seen {
 			t.Fatalf("tool %q missing from definitions", name)
 		}
+	}
+}
+
+// read_file used to hand back whatever bytes were on disk. That was survivable
+// while agents only wrote source files, and stopped being survivable the moment
+// they could generate images: an integrator read the PNG a worker had just
+// produced, the conversation reached 1.6 million tokens, and the run died on
+// `prompt is too long` — after the artifact it was verifying had been created.
+func TestReadFileRefusesBinaryContent(t *testing.T) {
+	root := t.TempDir()
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	if err := os.WriteFile(filepath.Join(root, "shiba.png"), png, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, isErr := New(root).Dispatch("read_file", map[string]any{"path": "shiba.png"})
+	if !isErr {
+		t.Fatalf("binary file was read as text: %q", out)
+	}
+	// The refusal has to be useful: the caller wanted to know the artifact is
+	// there, and that question is answerable without the bytes.
+	if !strings.Contains(out, "binary") || !strings.Contains(out, "shiba.png") {
+		t.Errorf("refusal does not describe the file: %q", out)
+	}
+	if strings.Contains(out, "PNG\r\n") {
+		t.Error("the binary content leaked into the result")
+	}
+}
+
+func TestReadFileRefusesAnOversizedFile(t *testing.T) {
+	root := t.TempDir()
+	big := bytes.Repeat([]byte("a"), maxReadBytes+1)
+	if err := os.WriteFile(filepath.Join(root, "big.txt"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, isErr := New(root).Dispatch("read_file", map[string]any{"path": "big.txt"})
+	if !isErr || !strings.Contains(out, "too large") {
+		t.Errorf("oversized read = %q (isErr=%v)", truncate(out, 80), isErr)
+	}
+}
+
+// Text still reads exactly as before, including non-ASCII — a UTF-8 check that
+// rejected Japanese source files would be worse than the problem it solves.
+func TestReadFileStillReadsText(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte("可愛い芝犬\nline two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, isErr := New(root).Dispatch("read_file", map[string]any{"path": "note.md"})
+	if isErr || out != "可愛い芝犬\nline two\n" {
+		t.Errorf("read_file = %q (isErr=%v)", out, isErr)
+	}
+}
+
+func TestReadFileRejectsADirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "out"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, isErr := New(root).Dispatch("read_file", map[string]any{"path": "out"}); !isErr {
+		t.Errorf("a directory read succeeded: %q", out)
 	}
 }

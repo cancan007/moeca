@@ -149,6 +149,63 @@ func (s *Server) handleScheduleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"removed": id})
 }
 
+// handleScheduleRun fires a schedule immediately, without waiting for its cron.
+//
+// Testing a schedule used to mean editing its cron to a minute in the near
+// future and waiting — which is a race, because the per-minute tick is aligned
+// to when the process started rather than to the wall clock. A schedule saved
+// three seconds after its minute's tick simply does not run, and nothing says
+// why. Deciding to run something is not a scheduling question, so it gets its
+// own action.
+//
+// A paused schedule can still be run this way: pausing stops the clock from
+// firing it, and running it by hand is exactly what someone does before turning
+// the clock back on.
+func (s *Server) handleScheduleRun(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	sc, err := s.store.ByID(req.ID)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	if sc == nil {
+		writeErr(w, 404, "unknown schedule")
+		return
+	}
+	if len(sc.RunSpec) == 0 {
+		writeErr(w, 400, "this schedule has no agent template bound, so there is nothing to run")
+		return
+	}
+
+	now := time.Now()
+	occ := store.ScheduleRun{
+		ScheduleID: sc.ID, Name: sc.Name, Perspective: sc.Perspective,
+		Status: store.RunStatusExecuted, Template: sc.TemplateLabel,
+	}
+	dir, cid, runID, launchErr := s.launchScheduledRun(sc, now)
+	occ.OutputDir, occ.ContainerID, occ.RunID = dir, cid, runID
+	if launchErr != nil {
+		occ.Status = store.RunStatusFailed
+	}
+	// Recorded even when the launch failed: a manual run that could not start is
+	// a thing that happened, and the history is where the operator will look.
+	_ = s.store.RecordOccurrence(occ, now)
+	if _, err := s.store.RecordRun(sc.ID, now); err != nil {
+		log.Printf("hostagent: record manual run %s: %v", sc.ID, err)
+	}
+	if launchErr != nil {
+		writeErr(w, 500, launchErr.Error())
+		return
+	}
+	go s.watchRun(runID)
+	writeJSON(w, 202, map[string]string{"runId": runID, "outputDir": dir})
+}
+
 func (s *Server) handleScheduleToggle(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID string `json:"id"`
@@ -238,6 +295,11 @@ func (s *Server) tickSchedules(now time.Time) {
 				}
 			}
 			_ = s.store.RecordOccurrence(occ, now)
+			// The occurrence above says the run started. What it turned into is
+			// only known later, so follow it and rewrite the row when it ends.
+			if occ.RunID != "" && occ.Status == store.RunStatusExecuted {
+				go s.watchRun(occ.RunID)
+			}
 		}
 	}
 }

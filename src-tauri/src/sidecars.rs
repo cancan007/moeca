@@ -169,6 +169,13 @@ pub fn spawn_all(config_dir: Option<PathBuf>, admin_sha256: &str) -> Vec<Child> 
         // The child watches this pid and self-terminates if we die without
         // running the graceful reaper (e.g. SIGKILL/crash).
         cmd.env("ORCHESTRA_PARENT_PID", std::process::id().to_string());
+        // A sidecar that shells out to docker (the sandbox controller) inherits
+        // this process's PATH — launchd's bare /usr/bin:/bin:… when the app was
+        // launched from Finder, which has no docker on it. Hand it both the
+        // augmented PATH and the binary we already resolved, so it cannot end up
+        // looking somewhere else than the shell does.
+        cmd.env("PATH", augmented_path());
+        cmd.env("ORCHESTRA_DOCKER_BIN", docker_bin());
         cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
         match cmd.spawn() {
             Ok(child) => {
@@ -213,14 +220,20 @@ fn docker_bin() -> String {
 /// A `docker` Command with the resolved absolute binary and a PATH augmented with
 /// the common CLI locations, so the docker CLI can also locate its own helper
 /// binaries (credential helpers, buildx) under a GUI launch that lacks a PATH.
-fn docker_cmd() -> Command {
-    let mut cmd = Command::new(docker_bin());
+/// This process's PATH with the usual docker install locations prepended. Used
+/// for every docker invocation and handed to the Go sidecars, which shell out to
+/// docker themselves.
+fn augmented_path() -> String {
     let extra = "/opt/homebrew/bin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:/usr/bin:/bin";
-    let path = match std::env::var("PATH") {
+    match std::env::var("PATH") {
         Ok(p) if !p.is_empty() => format!("{extra}:{p}"),
         _ => extra.to_string(),
-    };
-    cmd.env("PATH", path);
+    }
+}
+
+fn docker_cmd() -> Command {
+    let mut cmd = Command::new(docker_bin());
+    cmd.env("PATH", augmented_path());
     cmd
 }
 
