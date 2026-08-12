@@ -1397,6 +1397,7 @@ export function Daily() {
           run={artifactRun}
           onClose={() => setArtifactRun(null)}
           onOptimize={artifactRun.template ? () => { setOptimizeRun(artifactRun); setArtifactRun(null); } : undefined}
+          onDeleted={refreshRuns}
         />
       )}
 

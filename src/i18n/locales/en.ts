@@ -519,6 +519,9 @@ export const en: Dict = {
   },
 
   daily: {
+    deleteRun: "Delete this run",
+    deleteRunConfirm: "Delete it and its {{count}} artifacts",
+    deleteArtifactConfirm: "Delete for good",
     runNow: "Run",
     runNowTip: "Run it now, without waiting for its cron (works while paused)",
     runningNow: "Starting…",

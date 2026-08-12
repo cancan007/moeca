@@ -59,6 +59,46 @@ function shortTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? "" : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/**
+ * A delete that takes two clicks.
+ *
+ * Removing an artifact takes it off disk and there is no copy — the run that
+ * made it is finished. The app deletes templates and tools in one click because
+ * those are re-creatable; this is not, so the button asks once. Cheaper than a
+ * modal, and it keeps the confirmation next to the thing being confirmed.
+ */
+function DangerButton({ label, confirmLabel, busyLabel, onConfirm }: {
+  label: string; confirmLabel: string; busyLabel: string; onConfirm: () => Promise<void>;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const id = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        if (busy) return;
+        if (!armed) { setArmed(true); return; }
+        setBusy(true);
+        onConfirm().finally(() => { setBusy(false); setArmed(false); });
+      }}
+      style={{
+        font: "600 11px 'IBM Plex Sans'", cursor: busy ? "default" : "pointer",
+        padding: "7px 12px", borderRadius: 7, whiteSpace: "nowrap",
+        color: armed ? "#fff" : "var(--red)",
+        background: armed ? "var(--red)" : "transparent",
+        border: `1px solid ${armed ? "var(--red)" : "var(--tint-red-bd)"}`,
+      }}
+    >
+      {busy ? busyLabel : armed ? confirmLabel : label}
+    </div>
+  );
+}
+
 /** One artifact together with the run it came from — the run id is what makes
  *  it addressable, so the two always travel together. */
 interface Item {
@@ -69,6 +109,7 @@ interface Item {
 export function ArtifactGallery({ runs }: { runs: ScheduleRun[] }) {
   const { t } = useTranslation();
   const [items, setItems] = useState<Item[]>([]);
+  const drop = (it: Item) => setItems((xs) => xs.filter((x) => !(x.run.id === it.run.id && x.art.path === it.art.path)));
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<Item | null>(null);
 
@@ -135,7 +176,7 @@ export function ArtifactGallery({ runs }: { runs: ScheduleRun[] }) {
           </div>
         </div>
       ))}
-      {open && <ArtifactModal item={open} onClose={() => setOpen(null)} />}
+      {open && <ArtifactModal item={open} onClose={() => setOpen(null)} onDeleted={drop} />}
     </div>
   );
 }
@@ -148,7 +189,7 @@ export function ArtifactGallery({ runs }: { runs: ScheduleRun[] }) {
  * diff. Daily has neither, which is why this is a separate component rather
  * than a flag on that one.
  */
-export function DailyRunDrawer({ run, onClose, onOptimize }: { run: ScheduleRun; onClose: () => void; onOptimize?: () => void }) {
+export function DailyRunDrawer({ run, onClose, onOptimize, onDeleted }: { run: ScheduleRun; onClose: () => void; onOptimize?: () => void; onDeleted?: () => void }) {
   const { t } = useTranslation();
   const [arts, setArts] = useState<Artifact[]>([]);
   const [logs, setLogs] = useState("");
@@ -189,6 +230,12 @@ export function DailyRunDrawer({ run, onClose, onOptimize }: { run: ScheduleRun;
               ⚙ {t("settings.nav.prompt")}
             </div>
           )}
+          <DangerButton
+            label={t("daily.deleteRun")}
+            confirmLabel={t("daily.deleteRunConfirm", { count: arts.length })}
+            busyLabel={t("common.loading")}
+            onConfirm={() => dailyApi.deleteRun(run.id).then(() => { onDeleted?.(); onClose(); }).catch(() => {})}
+          />
           <div onClick={onClose} style={{ cursor: "pointer", color: "var(--tx-mut)", font: "400 18px 'IBM Plex Sans'", padding: "0 4px" }}>✕</div>
         </div>
 
@@ -210,7 +257,13 @@ export function DailyRunDrawer({ run, onClose, onOptimize }: { run: ScheduleRun;
             {logs || t("daily.noLogs")}
           </pre>
         )}
-        {open && <ArtifactModal item={open} onClose={() => setOpen(null)} />}
+        {open && (
+          <ArtifactModal
+            item={open}
+            onClose={() => setOpen(null)}
+            onDeleted={(it) => setArts((xs) => xs.filter((a) => a.path !== it.art.path))}
+          />
+        )}
       </div>
     </div>
   );
@@ -268,7 +321,7 @@ function ArtifactCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
   );
 }
 
-function ArtifactModal({ item, onClose }: { item: Item; onClose: () => void }) {
+function ArtifactModal({ item, onClose, onDeleted }: { item: Item; onClose: () => void; onDeleted?: (it: Item) => void }) {
   const { t } = useTranslation();
   const { art, run } = item;
   const src = dailyApi.artifactUrl(run.id, art.path);
@@ -306,6 +359,12 @@ function ArtifactModal({ item, onClose }: { item: Item; onClose: () => void }) {
           >
             {t("daily.download")}
           </a>
+          <DangerButton
+            label={t("common.delete")}
+            confirmLabel={t("daily.deleteArtifactConfirm")}
+            busyLabel={t("common.loading")}
+            onConfirm={() => dailyApi.deleteArtifact(run.id, art.path).then(() => { onDeleted?.(item); onClose(); }).catch(() => {})}
+          />
           <div onClick={onClose} style={{ cursor: "pointer", color: "var(--tx-mut)", font: "400 19px 'IBM Plex Sans'", padding: "0 4px" }}>✕</div>
         </div>
 

@@ -92,6 +92,13 @@ export const daily = {
    */
   artifactUrl: (runId: number, path: string, download = false) =>
     `${BASE}/daily/artifact?run=${runId}&path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`,
+  /** Remove one artifact. A gallery that only grows is one nothing can be
+   *  found in, so deleting is part of reviewing rather than an admin task. */
+  deleteArtifact: (runId: number, path: string) =>
+    req<{ deleted: string }>(`/daily/artifact?run=${runId}&path=${encodeURIComponent(path)}`, { method: "DELETE" }),
+  /** Remove an occurrence: its output directory and its history row. */
+  deleteRun: (runId: number) =>
+    req<{ deleted: number }>(`/daily/run?run=${runId}`, { method: "DELETE" }),
   /** Promote a pulled ticket into a Delivery worktree (branch ticket/<id>). */
   promote: (id: string, repo?: string) =>
     req<{ ticket: string; repo: string; branch: string; worktreePath: string }>(

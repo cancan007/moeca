@@ -519,6 +519,9 @@ export const zh: Dict = {
   },
 
   daily: {
+    deleteRun: "删除本次执行",
+    deleteRunConfirm: "连同 {{count}} 件产出一并删除",
+    deleteArtifactConfirm: "确认删除",
     runNow: "执行",
     runNowTip: "不等 cron，立即执行（暂停中也可）",
     runningNow: "启动中…",

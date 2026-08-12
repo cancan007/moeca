@@ -71,6 +71,13 @@ func (s *SQLiteStore) RecordOccurrence(r ScheduleRun, at time.Time) error {
 	return err
 }
 
+// DeleteRun removes one occurrence. Its artifacts are removed by the caller —
+// the store owns the row, not the directory.
+func (s *SQLiteStore) DeleteRun(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM schedule_runs WHERE id = ?`, id)
+	return err
+}
+
 // runColumns is the column list every occurrence read shares, so a new field
 // cannot be added to one query and forgotten in the other.
 const runColumns = `id, schedule_id, name, perspective, scheduled_at, status, repo, branch, container_id, run_id, template, output_dir`

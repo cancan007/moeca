@@ -240,6 +240,96 @@ func (s *Server) handleTaskArtifact(w http.ResponseWriter, r *http.Request) {
 	serveArtifact(w, r, dir, r.URL.Query().Get("path"))
 }
 
+// Deleting what a run produced.
+//
+// A Daily schedule that fires every day accumulates a directory per occurrence,
+// forever — a gallery that only ever grows is one nobody can find anything in.
+// Deleting is therefore an ordinary part of reviewing, not an admin task, and it
+// comes in the two sizes the gallery actually shows: one artifact, or one run's
+// whole output.
+//
+// Both resolve their path the same way everything else here does: the caller
+// names an occurrence id and a relative path, and the host decides what that
+// means. Nothing accepts a host path, so nothing can be pointed outside the
+// run's own directory — the guard matters more for a delete than for a read.
+
+// handleDailyArtifactDelete removes one file a run produced.
+func (s *Server) handleDailyArtifactDelete(w http.ResponseWriter, r *http.Request) {
+	dir, ok := s.runOutputDir(r.URL.Query().Get("run"))
+	if !ok {
+		writeErr(w, 404, "unknown run")
+		return
+	}
+	abs, err := safeJoinDir(dir, r.URL.Query().Get("path"))
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		writeErr(w, 404, "no such artifact")
+		return
+	}
+	if info.IsDir() {
+		// A directory delete would take everything under it, which is what the
+		// run-level delete is for and should be asked for explicitly.
+		writeErr(w, 400, "that is a directory; delete the run to remove all of it")
+		return
+	}
+	if err := os.Remove(abs); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"deleted": r.URL.Query().Get("path")})
+}
+
+// handleDailyRunDelete removes an occurrence: its output directory and the row
+// that points at it.
+//
+// The row goes last. If the directory removal fails the occurrence still names
+// something real, which is recoverable; a row deleted first would leave a
+// directory nothing can address, and therefore nothing can ever clean up.
+func (s *Server) handleDailyRunDelete(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("run")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeErr(w, 400, "run must be an occurrence id")
+		return
+	}
+	run, err := s.store.RunByID(id)
+	if err != nil {
+		writeErr(w, 404, "unknown run")
+		return
+	}
+	if run.OutputDir != "" {
+		// Confined to the Daily root: the directory came from the database, but
+		// a stored path is not a licence to remove whatever it points at.
+		if _, err := safeJoinDir(s.dailyRoot(), relativeTo(s.dailyRoot(), run.OutputDir)); err != nil {
+			writeErr(w, 400, "this run's output directory is outside the Daily root")
+			return
+		}
+		if err := os.RemoveAll(run.OutputDir); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+	}
+	if err := s.store.DeleteRun(id); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]int64{"deleted": id})
+}
+
+// relativeTo expresses path under root, or "" when it is not under it — which
+// safeJoinDir then rejects.
+func relativeTo(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return ""
+	}
+	return rel
+}
+
 // handleDailyArtifacts lists what a scheduled run produced.
 func (s *Server) handleDailyArtifacts(w http.ResponseWriter, r *http.Request) {
 	dir, ok := s.runOutputDir(r.URL.Query().Get("run"))

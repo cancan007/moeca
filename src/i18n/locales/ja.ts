@@ -522,6 +522,9 @@ export const ja = {
   },
 
   daily: {
+    deleteRun: "この実行を削除",
+    deleteRunConfirm: "成果物 {{count}} 件ごと削除する",
+    deleteArtifactConfirm: "本当に削除する",
     runNow: "実行",
     runNowTip: "cron を待たずに今すぐ実行します（停止中でも可）",
     runningNow: "起動中…",

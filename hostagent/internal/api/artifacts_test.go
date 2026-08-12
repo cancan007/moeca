@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -196,4 +197,121 @@ func TestDailyArtifacts_UnknownRunIsRefused(t *testing.T) {
 
 func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
+}
+
+// Deleting what a run produced. A schedule that fires daily accumulates a
+// directory per occurrence forever, so removing them is part of reviewing.
+
+func dailyRunWithFiles(t *testing.T, files map[string]string) (*Server, int64) {
+	t.Helper()
+	s := New(&Config{NoSeed: true, DataDir: t.TempDir()})
+	dir := filepath.Join(s.dailyRoot(), "sch-x", "1")
+	if err := os.MkdirAll(filepath.Join(dir, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.store.RecordOccurrence(store.ScheduleRun{
+		ScheduleID: "sch-x", Name: "n", Status: store.RunStatusDone, OutputDir: dir,
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	runs, _ := s.store.Runs(0)
+	return s, runs[0].ID
+}
+
+func TestDeletingOneArtifactLeavesTheRest(t *testing.T) {
+	s, id := dailyRunWithFiles(t, map[string]string{"a.png": "x", "b.md": "y"})
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	req, _ := http.NewRequest("DELETE", srv.URL+"/daily/artifact?run="+strconv.FormatInt(id, 10)+"&path=a.png", nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	dir, _ := s.runOutputDir(strconv.FormatInt(id, 10))
+	if _, err := os.Stat(filepath.Join(dir, "a.png")); !os.IsNotExist(err) {
+		t.Error("the artifact is still there")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b.md")); err != nil {
+		t.Error("an artifact that was not asked for was removed")
+	}
+}
+
+// The path is relative to the run's own directory and nothing else. A delete
+// that could be pointed elsewhere is worse than a read that could.
+func TestArtifactDeleteCannotEscapeTheRunDirectory(t *testing.T) {
+	s, id := dailyRunWithFiles(t, map[string]string{"a.png": "x"})
+	outside := filepath.Join(s.cfg.DataDir, "victim.txt")
+	if err := os.WriteFile(outside, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	for _, p := range []string{"../../../victim.txt", "/etc/hosts", ".."} {
+		req, _ := http.NewRequest("DELETE",
+			srv.URL+"/daily/artifact?run="+strconv.FormatInt(id, 10)+"&path="+url.QueryEscape(p), nil)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode == 200 {
+			t.Errorf("delete of %q was allowed", p)
+		}
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Error("a file outside the run directory was removed")
+	}
+}
+
+func TestDeletingARunRemovesItsOutputAndItsRow(t *testing.T) {
+	s, id := dailyRunWithFiles(t, map[string]string{"a.png": "x", "b.md": "y"})
+	dir, _ := s.runOutputDir(strconv.FormatInt(id, 10))
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	req, _ := http.NewRequest("DELETE", srv.URL+"/daily/run?run="+strconv.FormatInt(id, 10), nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Error("the output directory survived")
+	}
+	runs, _ := s.store.Runs(0)
+	if len(runs) != 0 {
+		t.Errorf("the occurrence row survived: %+v", runs)
+	}
+}
+
+// A directory is not an artifact: removing one takes everything under it, which
+// is what the run-level delete is for and has to be asked for explicitly.
+func TestArtifactDeleteRefusesADirectory(t *testing.T) {
+	s, id := dailyRunWithFiles(t, map[string]string{"a.png": "x"})
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	req, _ := http.NewRequest("DELETE", srv.URL+"/daily/artifact?run="+strconv.FormatInt(id, 10)+"&path=nested", nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 400 {
+		t.Errorf("status = %d, want 400", res.StatusCode)
+	}
 }
