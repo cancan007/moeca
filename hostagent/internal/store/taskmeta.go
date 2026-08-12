@@ -14,6 +14,10 @@ type TaskMeta struct {
 	// "__dynamic__" = pick one at run time). Rows written before this field
 	// existed unmarshal to "", i.e. single agent.
 	Template string `json:"template"`
+	// Scope is the knowledge this task's agents may retrieve, named as a node
+	// of the Knowledge graph. Absent means no scope: the run searches
+	// everything, which is what every task did before this field existed.
+	Scope *KnowledgeScope `json:"scope,omitempty"`
 }
 
 // GetTaskMeta returns the metadata for a Delivery task (zero value if none).

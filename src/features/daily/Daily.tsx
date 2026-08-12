@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, type CSSProperties } from "react";
-import { schedules as schedulesApi, scheduleTask, type Schedule as LiveSchedule, type SchedulePerspective } from "@/lib/schedules";
+import { schedules as schedulesApi, scheduleTask, type Schedule as LiveSchedule, type SchedulePerspective, type KnowledgeScope } from "@/lib/schedules";
 import { daily as dailyApi, type Ticket, type ScheduleRun } from "@/lib/daily";
 import { useStore } from "@/store/useStore";
 import { templateOptions, compileRef, buildRunSpec, type TemplateStores } from "@/lib/agentTemplates";
 import { ArtifactGallery, DailyRunDrawer } from "./ArtifactGallery";
 import { calendarRuns, runStateLabel, type CalendarRun } from "./calendarRuns";
 import { parseCron } from "@/lib/cron";
+import { knowledge as knowledgeApi } from "@/lib/knowledge";
 import { RunOptimizer } from "@/features/runs/RunOptimizer";
 import i18n from "@/i18n";
 import { useTranslation } from "react-i18next";
@@ -481,6 +482,16 @@ export function Daily() {
   // "" only until the template list resolves; boundTemplateRef falls back to the
   // first template so a schedule is always bound to one.
   const [draftTemplateRef, setDraftTemplateRef] = useState("");
+  // Knowledge scope: which part of the Knowledge graph this schedule may read.
+  // undefined means no scope was chosen, which is what every schedule had
+  // before this existed — the run searches everything.
+  const [draftScope, setDraftScope] = useState<KnowledgeScope | undefined>(undefined);
+  const [knowledgeTree, setKnowledgeTree] = useState<{ orgs: { id: string; name: string }[]; projects: { id: string; name: string; orgId: string }[] }>({ orgs: [], projects: [] });
+  useEffect(() => {
+    knowledgeApi.graph()
+      .then((g) => setKnowledgeTree({ orgs: g.orgs, projects: g.projects }))
+      .catch(() => setKnowledgeTree({ orgs: [], projects: [] }));
+  }, []);
 
   const draftShowFreq = draftRepeat;
   const draftShowMonth = draftRepeat && draftFreq === "monthly";
@@ -593,6 +604,7 @@ export function Daily() {
     setDraftGoal("");
     setDraftMilestones([""]);
     setDraftTemplateRef("");
+    setDraftScope(undefined);
     setEditingId(null);
     setCronOverride(null);
   }
@@ -604,6 +616,7 @@ export function Daily() {
     setDraftGoal(sc.goal ?? "");
     setDraftMilestones(sc.milestones?.length ? sc.milestones.map((m) => m.title) : [""]);
     setDraftTemplateRef(sc.templateRef ?? "");
+    setDraftScope(sc.scope);
 
     const form = parseCron(sc.cron);
     if (form) {
@@ -678,6 +691,9 @@ export function Daily() {
         templateLabel: templateLabel ?? existing?.templateLabel,
         templateRef: templateRef ?? existing?.templateRef,
         runSpec: runSpec ?? existing?.runSpec,
+        // null clears the scope. Never omitted, so clearing it is a decision
+        // the schedule keeps rather than a no-op.
+        scope: draftScope ?? null,
       };
       try {
         if (editingId) {
@@ -1288,6 +1304,40 @@ export function Daily() {
                   </select>
                 </div>
               )}
+              {/* Knowledge scope: a place in the graph, not a group list. The
+                  groups under a project change as it is edited, and a schedule
+                  that meant "this project's knowledge" should follow it — so
+                  the node is what gets saved and it is resolved at launch. */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ font: "600 11px 'IBM Plex Sans'", color: "var(--tx3)" }}>{t("daily.knowledgeScope")}</span>
+                  <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("daily.knowledgeScopeHint")}</span>
+                </div>
+                <select
+                  value={draftScope ? `${draftScope.kind}:${draftScope.id ?? ""}` : ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) { setDraftScope(undefined); return; }
+                    const [kind, id] = v.split(":");
+                    setDraftScope({ kind: kind as KnowledgeScope["kind"], id: id || undefined });
+                  }}
+                  style={{ background: "var(--bg-card2)", border: "1px solid var(--bd2)", borderRadius: 8, padding: "10px 12px", font: "500 12px 'IBM Plex Sans'", color: "var(--tx)", outline: "none" }}
+                >
+                  {/* Unset is not the same as Global: unset applies no policy
+                      at all, Global grants only what is declared everyone's. */}
+                  <option value="">{t("daily.scopeUnset")}</option>
+                  <option value="global:">{t("daily.scopeGlobal")}</option>
+                  {knowledgeTree.orgs.map((o) => (
+                    <optgroup key={o.id} label={o.name}>
+                      <option value={`organization:${o.id}`}>{t("daily.scopeWholeOrg", { name: o.name })}</option>
+                      {knowledgeTree.projects.filter((p) => p.orgId === o.id).map((p) => (
+                        <option key={p.id} value={`project:${p.id}`}>{p.name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <span style={{ font: "600 11px 'IBM Plex Sans'", color: "var(--tx3)" }}>{t("daily.perspectiveLabel")}</span>
                 <div style={{ display: "flex", gap: 8 }}>

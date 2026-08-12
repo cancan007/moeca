@@ -4,9 +4,52 @@ import type { DeliveryTask } from "@/store/useStore";
 import { useStore } from "@/store/useStore";
 import { sandbox, type RunStage, type RunStatus, type StageStatus } from "@/lib/sandbox";
 import { hostagent } from "@/lib/hostagent";
+import { delivery } from "@/lib/delivery";
 import { runs } from "@/lib/runs";
 import { compileRef, buildRunSpec, DYNAMIC_REF, type TemplateStores } from "@/lib/agentTemplates";
 import { compileRouter } from "./compileTemplate";
+
+/**
+ * Resolve each stage's knowledge scope before a Delivery run starts.
+ *
+ * The task names a node of the Knowledge graph; each stage says how many
+ * relations it may follow out of it. Both are resolved by the host agent, which
+ * owns the graph — computing it here would mean two implementations of "what
+ * does project X grant", and they would drift.
+ *
+ * A task with no scope resolves to nothing at all: the run stays unscoped and
+ * searches everything, exactly as it did before scopes existed.
+ */
+async function withStageScopes(
+  stages: RunStage[],
+  repo: string,
+  branch: string,
+): Promise<{ stages: RunStage[]; runGroups: string[] | null }> {
+  let meta;
+  try {
+    meta = await delivery.getTaskMeta(repo, branch);
+  } catch {
+    return { stages, runGroups: null };
+  }
+  if (!meta.scope) return { stages, runGroups: null };
+
+  // One request per distinct depth: stages usually share one.
+  const depths = [...new Set(stages.map((st) => st.knowledgeDepth ?? 0))];
+  const resolved = new Map<number, string[]>();
+  for (const d of depths) {
+    try {
+      const r = await delivery.resolveScope(meta.scope, d);
+      resolved.set(d, r.groups ?? []);
+    } catch {
+      // A scope that cannot be resolved must not widen into "everything".
+      resolved.set(d, []);
+    }
+  }
+  return {
+    stages: stages.map((st) => ({ ...st, groups: resolved.get(st.knowledgeDepth ?? 0) ?? [] })),
+    runGroups: resolved.get(0) ?? [],
+  };
+}
 
 const STATUS_COLOR: Record<StageStatus, string> = {
   pending: "var(--tx-faint)",
@@ -99,11 +142,17 @@ export function AgentRunner({ task, templateRef }: { task: DeliveryTask; templat
   // Delivery tasks own a git worktree, so stages share it and run serially.
   // Shared worktrees are only safe without concurrency — see the orchestrator.
   const launch = async (stages: RunStage[], label: string, ref: string): Promise<string> => {
+    // Each stage's knowledge scope, resolved by the host: it owns the graph, so
+    // "project X" means the same thing here as it does for a schedule. How far
+    // a stage may follow relations comes from its agent template, which is why
+    // this is per stage rather than once for the run.
+    const scoped = await withStageScopes(stages, task.project, task.branch);
     const { runId: id } = await sandbox.runTemplate({
       taskId,
       worktreePath: task.worktreePath ?? "",
       isolation: "strict",
-      ...buildRunSpec(stages),
+      ...buildRunSpec(scoped.stages),
+      ...(scoped.runGroups ? { groups: scoped.runGroups } : {}),
       worktreeMode: "shared",
       maxParallel: 1,
       delegation: false,

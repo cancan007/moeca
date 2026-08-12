@@ -39,6 +39,10 @@ func (s *Server) handleTaskMetaSet(w http.ResponseWriter, r *http.Request) {
 		Goal       *string            `json:"goal"`
 		Milestones *[]store.Milestone `json:"milestones"`
 		Template   *string            `json:"template"`
+		// A pointer of a pointer would be needed to distinguish "leave alone"
+		// from "clear"; instead ClearScope says the second thing explicitly.
+		Scope      *store.KnowledgeScope `json:"scope"`
+		ClearScope bool                  `json:"clearScope"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -60,6 +64,11 @@ func (s *Server) handleTaskMetaSet(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Template != nil {
 		cur.Template = *req.Template
+	}
+	if req.ClearScope {
+		cur.Scope = nil
+	} else if req.Scope != nil {
+		cur.Scope = req.Scope
 	}
 	if strings.TrimSpace(cur.Goal) != "" {
 		n := 0

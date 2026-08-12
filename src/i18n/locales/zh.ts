@@ -99,6 +99,8 @@ export const zh: Dict = {
     },
 
     agents: {
+      knowledgeDepth: "关联深度",
+      knowledgeDepthTip: "从范围出发可沿知识关联扩展的跳数。0（默认）不扩展。conflicts-with 不会被跟随。",
       desc: "以三种粒度登记模板。先登记 Solo → 用 Static（Graph/Supervisor）进行组合 → 再由 Dynamic 动态选用。",
       soloTag: "单体专家",
       soloNote: "专注于单一角色的单体代理。不调用其他代理，只负责自身的专业领域。",
@@ -519,6 +521,11 @@ export const zh: Dict = {
   },
 
   daily: {
+    knowledgeScopeHint: "未指定则检索全部",
+    scopeUnset: "未指定（检索全部）",
+    scopeGlobal: "仅全体共享的知识（Global）",
+    scopeWholeOrg: "{{name}} 全部",
+    knowledgeScope: "可检索的知识",
     deleteRun: "删除本次执行",
     deleteRunConfirm: "连同 {{count}} 件产出一并删除",
     deleteArtifactConfirm: "确认删除",
@@ -862,7 +869,7 @@ export const zh: Dict = {
   rag: {
     kind: { local: "本地", external: "外部HTTPS" },
     media: { text: "文本", csv: "表格数据", subtitle: "字幕", pdf: "PDF", image: "图片", video: "视频" },
-    scopes: { global: "全体", project: "项目内", organization: "组织整体", manual: "手动指定" },
+    scopes: { global: "全体", project: "项目内", organization: "组织整体" },
   },
 
   errors: {

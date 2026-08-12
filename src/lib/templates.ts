@@ -72,6 +72,14 @@ export interface SoloAgent {
    *  the difference between "cannot" and "asked not to". Video is the expensive
    *  one and is deliberately its own switch. */
   media?: MediaTools;
+  /** How many knowledge relations this agent may follow out of the task's
+   *  scope. 0 (the default) keeps the scope exactly as chosen; 1 adds the
+   *  groups a scoped group directly requires, and so on.
+   *
+   *  A relation was documentation — "this one requires that one" — and reading
+   *  it as a grant is only safe because of this bound: without it, a single
+   *  edge drawn on the canvas could connect every group in the graph. */
+  knowledgeDepth?: number;
   /** When set, this agent gets a web_search tool. The search itself runs on the
    *  model provider's side — the sandbox gets no route to the web — but it is
    *  still an explicit grant: searches cost money per use, and an agent that was

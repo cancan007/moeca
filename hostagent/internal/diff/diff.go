@@ -13,8 +13,8 @@ import (
 type LineType string
 
 const (
-	Meta    LineType = "meta"    // file header (--- / +++ / diff --git)
-	Hunk    LineType = "hunk"    // @@ -a,b +c,d @@
+	Meta    LineType = "meta" // file header (--- / +++ / diff --git)
+	Hunk    LineType = "hunk" // @@ -a,b +c,d @@
 	Add     LineType = "add"
 	Del     LineType = "del"
 	Context LineType = "context"

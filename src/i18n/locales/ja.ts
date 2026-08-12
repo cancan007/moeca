@@ -102,6 +102,8 @@ export const ja = {
     },
 
     agents: {
+      knowledgeDepth: "関連の深さ",
+      knowledgeDepthTip: "スコープから knowledge の relation を何ホップ辿って参照を広げるか。0（既定）は広げません。conflicts-with は辿りません。",
       desc: "3つの粒度でテンプレートを登録。Solo を登録 → Static（Graph/Supervisor）で組み合わせ → Dynamic で動的に使い分けます。",
       soloTag: "単体専門家",
       soloNote: "1つの役割に特化した単体エージェント。他を呼ばず、自身の専門領域のみを担当します。",
@@ -522,6 +524,11 @@ export const ja = {
   },
 
   daily: {
+    knowledgeScopeHint: "未指定なら全体を検索します",
+    scopeUnset: "未指定（全体を検索）",
+    scopeGlobal: "全体共有のナレッジのみ（Global）",
+    scopeWholeOrg: "{{name}} 全体",
+    knowledgeScope: "参照するナレッジ",
     deleteRun: "この実行を削除",
     deleteRunConfirm: "成果物 {{count}} 件ごと削除する",
     deleteArtifactConfirm: "本当に削除する",
@@ -868,7 +875,7 @@ export const ja = {
   rag: {
     kind: { local: "ローカル", external: "外部HTTPS" },
     media: { text: "テキスト", csv: "表データ", subtitle: "字幕", pdf: "PDF", image: "画像", video: "動画" },
-    scopes: { global: "全体", project: "プロジェクト内", organization: "組織全体", manual: "手動指定" },
+    scopes: { global: "全体", project: "プロジェクト内", organization: "組織全体" },
   },
 
   errors: {

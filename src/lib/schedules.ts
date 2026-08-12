@@ -31,6 +31,21 @@ export interface Schedule {
   templateLabel: string;
   templateRef: string; // "solo:<id>" | "static:<id>" (for the prompt-edit loop)
   runSpec?: unknown; // compiled stages DAG the host agent forwards to /run
+  /** Knowledge scope: the node of the Knowledge graph this schedule may read.
+   *  Absent means no scope — the run searches everything, as it always did. */
+  scope?: KnowledgeScope;
+}
+
+/** What a schedule may retrieve, named as a place in the Knowledge graph.
+ *
+ *  "global" carries no id and means the knowledge everyone shares. It is not
+ *  "everything": it resolves to no groups at all, and globally-scoped sources
+ *  reach the run anyway because the retrieval filter exempts them. Naming a
+ *  node rather than a group list also means the scope follows the graph — a
+ *  group added to the project later is included without re-saving. */
+export interface KnowledgeScope {
+  kind: "global" | "organization" | "project";
+  id?: string;
 }
 
 export interface ScheduleSpec {
@@ -43,6 +58,8 @@ export interface ScheduleSpec {
   templateLabel?: string;
   templateRef?: string;
   runSpec?: unknown;
+  /** Send null to clear the scope, omit to leave it alone. */
+  scope?: KnowledgeScope | null;
 }
 
 /** The instruction a schedule's agents actually receive.

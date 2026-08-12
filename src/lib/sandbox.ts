@@ -29,6 +29,11 @@ export interface RunStage {
    *  absent tool, not a disabled one. Routed through the gateway like every
    *  other model call, so the agent still holds no key. */
   media?: MediaTools;
+  /** How far this stage may follow knowledge relations out of the task's scope.
+   *  Resolved to a concrete group set host-side before the run starts. */
+  knowledgeDepth?: number;
+  /** This stage's resolved knowledge scope. Absent falls back to the run's. */
+  groups?: string[];
   /** Web search grant. Unlike every other tool, the agent does not perform this
    *  one: the model provider runs the search and returns the results inside the
    *  same response, so the container gets no route to the web and the gateway

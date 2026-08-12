@@ -160,6 +160,9 @@
       },
       "budget": {
         "maxTokensPerSession": 0
+      },
+      "injectHeaders": {
+        "X-Orchestra-Groups": "${GROUPS}"
       }
     }
   }

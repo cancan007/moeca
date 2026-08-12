@@ -99,6 +99,8 @@ export const en: Dict = {
     },
 
     agents: {
+      knowledgeDepth: "Relation hops",
+      knowledgeDepthTip: "How many knowledge relations this agent may follow out of the task's scope. 0 (the default) widens nothing. conflicts-with is never followed.",
       desc: "Register templates at three granularities. Register Solos → combine them under Static (Graph/Supervisor) → let Dynamic pick between them at run time.",
       soloTag: "Single specialist",
       soloNote: "A single agent devoted to one role. It calls no one else and covers only its own specialty.",
@@ -358,7 +360,7 @@ export const en: Dict = {
     },
 
     rag: {
-      desc: "A dedicated RAG container vector-indexes your knowledge sources — both read-only local mounts and external HTTPS documents — scoped as in-project, organization-wide or manual. Agents can search only via rag_search through the gateway; the sandbox never reaches the host directly (external fetches finish inside the RAG container, so no sandbox→host network surface is opened).",
+      desc: "A dedicated RAG container vector-indexes your knowledge sources — both read-only local mounts and external HTTPS documents — scoped as global, in-project or organization-wide. Agents can search only via rag_search through the gateway; the sandbox never reaches the host directly (external fetches finish inside the RAG container, so no sandbox→host network surface is opened).",
       indexerOffline:
         "Cannot reach the RAG indexer (127.0.0.1:8790). Check that you launched the desktop app, and that the image exists — `docker build -t orchestra/rag:latest ragindex/`.",
       offlineEmbed:
@@ -519,6 +521,11 @@ export const en: Dict = {
   },
 
   daily: {
+    knowledgeScopeHint: "Unset searches everything",
+    scopeUnset: "Unset (searches everything)",
+    scopeGlobal: "Only knowledge shared with everyone (Global)",
+    scopeWholeOrg: "All of {{name}}",
+    knowledgeScope: "Knowledge it may read",
     deleteRun: "Delete this run",
     deleteRunConfirm: "Delete it and its {{count}} artifacts",
     deleteArtifactConfirm: "Delete for good",
@@ -865,7 +872,7 @@ export const en: Dict = {
   rag: {
     kind: { local: "Local", external: "External HTTPS" },
     media: { text: "Text", csv: "Tabular", subtitle: "Subtitles", pdf: "PDF", image: "Image", video: "Video" },
-    scopes: { global: "All", project: "In project", organization: "Organization", manual: "Manual" },
+    scopes: { global: "All", project: "In project", organization: "Organization" },
   },
 
   errors: {

@@ -116,7 +116,9 @@ func (s *Server) runChild(dir, worktreeDir string, run *Run, stage Stage, policy
 	}
 
 	taskID := sanitizeID(run.TaskID + "-" + stage.ID + "-sub-" + req.ID)
-	spec := s.buildSpec(taskID, worktreeDir, policy, nil, env, strict)
+	// A sub-agent inherits its parent run's session, and therefore its
+	// knowledge scope: delegation must not be a way to widen what can be read.
+	spec := s.buildSpec(taskID, worktreeDir, policy, nil, env, strict, s.sessionFor(run, stage.ID))
 	cid, err := s.docker.Create(spec)
 	if err != nil {
 		s.writeDelegateResult(dir, map[string]any{"error": err.Error(), "exitCode": -1})

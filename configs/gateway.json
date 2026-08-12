@@ -138,8 +138,13 @@
         "Authorization": "Basic ${SECRET}",
         "Accept": "application/json"
       },
-      "rateLimit": { "rps": 5, "burst": 10 },
-      "budget": { "maxTokensPerSession": 0 }
+      "rateLimit": {
+        "rps": 5,
+        "burst": 10
+      },
+      "budget": {
+        "maxTokensPerSession": 0
+      }
     },
     "trello": {
       "kind": "tool",
@@ -151,8 +156,13 @@
       "injectHeaders": {
         "Authorization": "${SECRET}"
       },
-      "rateLimit": { "rps": 5, "burst": 10 },
-      "budget": { "maxTokensPerSession": 0 }
+      "rateLimit": {
+        "rps": 5,
+        "burst": 10
+      },
+      "budget": {
+        "maxTokensPerSession": 0
+      }
     },
     "notion": {
       "kind": "tool",
@@ -165,8 +175,13 @@
         "Authorization": "Bearer ${SECRET}",
         "Notion-Version": "2022-06-28"
       },
-      "rateLimit": { "rps": 5, "burst": 10 },
-      "budget": { "maxTokensPerSession": 0 }
+      "rateLimit": {
+        "rps": 5,
+        "burst": 10
+      },
+      "budget": {
+        "maxTokensPerSession": 0
+      }
     },
     "fetch": {
       "kind": "tool",
@@ -201,11 +216,25 @@
       },
       "budget": {
         "maxTokensPerSession": 0
+      },
+      "injectHeaders": {
+        "X-Orchestra-Groups": "${GROUPS}"
       }
     }
   },
   "deny": [
-    { "scope": "network", "pattern": "169.254.169.254", "note": "クラウドメタデータエンドポイント" },
-    { "scope": "command", "pattern": "/repos/*/*", "methods": ["DELETE"], "note": "リポジトリ削除の禁止" }
+    {
+      "scope": "network",
+      "pattern": "169.254.169.254",
+      "note": "クラウドメタデータエンドポイント"
+    },
+    {
+      "scope": "command",
+      "pattern": "/repos/*/*",
+      "methods": [
+        "DELETE"
+      ],
+      "note": "リポジトリ削除の禁止"
+    }
   ]
 }

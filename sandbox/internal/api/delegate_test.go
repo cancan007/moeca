@@ -95,7 +95,9 @@ func TestDelegation_CreateErrorReported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("result.json not written on error: %v", err)
 	}
-	var res struct{ Error string `json:"error"` }
+	var res struct {
+		Error string `json:"error"`
+	}
 	json.Unmarshal(resRaw, &res)
 	if res.Error == "" {
 		t.Error("expected an error in result.json when the child fails to launch")

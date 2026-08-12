@@ -300,3 +300,149 @@ func TestRunNowRejectsAnUnknownSchedule(t *testing.T) {
 		t.Errorf("status = %d, want 404", code)
 	}
 }
+
+// A schedule's knowledge scope has to reach the run, or the picker is lying
+// about what it configures. It is stated at launch rather than read out of the
+// stored run spec, because a spec compiled before the scope was chosen carries
+// none of it.
+func TestScheduleScopeReachesTheRun(t *testing.T) {
+	var runBody map[string]any
+	s, _ := dailyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&runBody)
+		w.WriteHeader(201)
+		w.Write([]byte(`{"runId":"r1"}`))
+	})
+	s.store.Create(&store.Schedule{
+		Name: "scoped", Cron: "0 3 * * *", Active: true,
+		RunSpec: []byte(`{"stages":[{"id":"a"}]}`),
+		Scope:   &store.KnowledgeScope{Kind: "project", ID: "proj-a"},
+	})
+	// Two groups serve the project; a third serves another one.
+	org, _ := s.store.AddKnowledgeOrg("Acme")
+	projA, _ := s.store.AddKnowledgeProject("A", org.ID)
+	projB, _ := s.store.AddKnowledgeProject("B", org.ID)
+	g1, _ := s.store.AddKnowledgeGroup("payments", "#fff", "", "")
+	g2, _ := s.store.AddKnowledgeGroup("inventory", "#fff", "", "")
+	g3, _ := s.store.AddKnowledgeGroup("elsewhere", "#fff", "", "")
+	s.store.SetKnowledgeGroupProjects(g1.ID, []string{projA.ID})
+	s.store.SetKnowledgeGroupProjects(g2.ID, []string{projA.ID})
+	s.store.SetKnowledgeGroupProjects(g3.ID, []string{projB.ID})
+	// The stored scope names the real project id.
+	all, _ := s.store.List()
+	all[0].Scope = &store.KnowledgeScope{Kind: "project", ID: projA.ID}
+	s.store.Update(all[0])
+
+	s.tickSchedules(time.Date(2026, 7, 8, 3, 0, 0, 0, time.UTC))
+
+	got, _ := runBody["groups"].([]any)
+	if len(got) != 2 {
+		t.Fatalf("groups sent to the controller = %v, want the project's two", runBody["groups"])
+	}
+	for _, g := range got {
+		if g == g3.ID {
+			t.Errorf("a group from another project leaked in: %v", got)
+		}
+	}
+}
+
+// Global is not "everything": it is the knowledge everyone shares. It resolves
+// to an empty group set, and globally-scoped sources reach the run anyway
+// because the retrieval filter exempts them — so the tier needs no special case.
+func TestGlobalScopeGrantsNoGroups(t *testing.T) {
+	var runBody map[string]any
+	s, _ := dailyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&runBody)
+		w.WriteHeader(201)
+		w.Write([]byte(`{"runId":"r1"}`))
+	})
+	s.store.Create(&store.Schedule{
+		Name: "g", Cron: "0 3 * * *", Active: true,
+		RunSpec: []byte(`{"stages":[{"id":"a"}]}`),
+		Scope:   &store.KnowledgeScope{Kind: "global"},
+	})
+
+	s.tickSchedules(time.Date(2026, 7, 8, 3, 0, 0, 0, time.UTC))
+
+	got, present := runBody["groups"]
+	if !present {
+		t.Fatal("global scope sent no groups key; that means no policy at all")
+	}
+	if list, _ := got.([]any); len(list) != 0 {
+		t.Errorf("groups = %v, want an empty list", got)
+	}
+}
+
+// An organization takes in every project under it.
+func TestOrganizationScopeSpansItsProjects(t *testing.T) {
+	var runBody map[string]any
+	s, _ := dailyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&runBody)
+		w.WriteHeader(201)
+		w.Write([]byte(`{"runId":"r1"}`))
+	})
+	org, _ := s.store.AddKnowledgeOrg("Acme")
+	other, _ := s.store.AddKnowledgeOrg("Other")
+	pA, _ := s.store.AddKnowledgeProject("A", org.ID)
+	pB, _ := s.store.AddKnowledgeProject("B", org.ID)
+	pC, _ := s.store.AddKnowledgeProject("C", other.ID)
+	g1, _ := s.store.AddKnowledgeGroup("a", "#fff", "", "")
+	g2, _ := s.store.AddKnowledgeGroup("b", "#fff", "", "")
+	g3, _ := s.store.AddKnowledgeGroup("c", "#fff", "", "")
+	s.store.SetKnowledgeGroupProjects(g1.ID, []string{pA.ID})
+	s.store.SetKnowledgeGroupProjects(g2.ID, []string{pB.ID})
+	s.store.SetKnowledgeGroupProjects(g3.ID, []string{pC.ID})
+
+	s.store.Create(&store.Schedule{
+		Name: "o", Cron: "0 3 * * *", Active: true,
+		RunSpec: []byte(`{"stages":[{"id":"a"}]}`),
+		Scope:   &store.KnowledgeScope{Kind: "organization", ID: org.ID},
+	})
+	s.tickSchedules(time.Date(2026, 7, 8, 3, 0, 0, 0, time.UTC))
+
+	got, _ := runBody["groups"].([]any)
+	if len(got) != 2 {
+		t.Fatalf("groups = %v, want the organization's two", got)
+	}
+	for _, g := range got {
+		if g == g3.ID {
+			t.Error("a group from another organization leaked in")
+		}
+	}
+}
+
+// No scope means the key is absent, not null — the controller reads "no groups
+// key" as "this run asked for no scope" and uses the shared session.
+func TestAScheduleWithNoScopeSendsNoGroups(t *testing.T) {
+	var runBody map[string]any
+	s, _ := dailyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&runBody)
+		w.WriteHeader(201)
+		w.Write([]byte(`{"runId":"r1"}`))
+	})
+	s.store.Create(&store.Schedule{
+		Name: "plain", Cron: "0 3 * * *", Active: true,
+		RunSpec: []byte(`{"stages":[{"id":"a"}],"groups":["stale"]}`),
+	})
+
+	s.tickSchedules(time.Date(2026, 7, 8, 3, 0, 0, 0, time.UTC))
+
+	if _, present := runBody["groups"]; present {
+		t.Errorf("groups = %v, want the key absent", runBody["groups"])
+	}
+}
+
+// The scope survives a round trip through the meta blob.
+func TestScheduleScopePersists(t *testing.T) {
+	s, _ := dailyServer(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(201) })
+	sc, err := s.store.Create(&store.Schedule{Name: "s", Cron: "0 3 * * *", Scope: &store.KnowledgeScope{Kind: "project", ID: "p1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.store.ByID(sc.ID)
+	if err != nil || got == nil {
+		t.Fatal(err)
+	}
+	if got.Scope == nil || got.Scope.Kind != "project" || got.Scope.ID != "p1" {
+		t.Errorf("scope after reload = %+v", got.Scope)
+	}
+}

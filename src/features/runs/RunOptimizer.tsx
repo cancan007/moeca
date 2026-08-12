@@ -74,6 +74,9 @@ export function RunOptimizer({
         await schedulesApi.update(sc.id, {
           name: sc.name, cron: sc.cron, perspective: sc.perspective,
           active: sc.active, goal: sc.goal, milestones: sc.milestones,
+          // Carried through: a prompt edit must not quietly widen what the
+          // schedule may read.
+          scope: sc.scope ?? null,
           templateLabel: c?.label ?? sc.templateLabel, templateRef: sc.templateRef,
           runSpec: c ? buildRunSpec(c.stages, { unattended: true }) : sc.runSpec,
         });

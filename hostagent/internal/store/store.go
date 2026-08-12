@@ -15,6 +15,18 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// KnowledgeScope names the part of the Knowledge graph a schedule may read.
+//
+// Kind "global" carries no id and means the knowledge everyone shares. It
+// resolves to an EMPTY group set, not to "everything": globally-scoped sources
+// reach a caller regardless of the groups it holds, so "entitled to no group"
+// already means "only what is everyone's". The tier needs no special case in
+// the retrieval filter — it is what that filter already does.
+type KnowledgeScope struct {
+	Kind string `json:"kind"` // "global" | "organization" | "project"
+	ID   string `json:"id,omitempty"`
+}
+
 // Milestone is one checkpoint of a schedule's goal.
 type Milestone struct {
 	Title string `json:"title"`
@@ -44,6 +56,14 @@ type Schedule struct {
 	// worktreePath) the frontend produced from the bound template. When present
 	// a fired occurrence runs it via the sandbox controller's /run.
 	RunSpec json.RawMessage `json:"runSpec,omitempty"`
+	// Scope is the knowledge this schedule's agents may retrieve, named as a
+	// node of the Knowledge graph rather than as a group list. Groups under a
+	// node change as the graph is edited, so the node is what a schedule can
+	// mean for longer than a week; it is resolved to groups at launch.
+	//
+	// Absent means no scope was chosen and the run searches everything, which
+	// is what every schedule did before this field existed.
+	Scope *KnowledgeScope `json:"scope,omitempty"`
 }
 
 // scheduleMeta is what we persist in the schedules.meta JSON column.
@@ -58,6 +78,7 @@ type scheduleMeta struct {
 	TemplateLabel string          `json:"templateLabel,omitempty"`
 	TemplateRef   string          `json:"templateRef,omitempty"`
 	RunSpec       json.RawMessage `json:"runSpec,omitempty"`
+	Scope         *KnowledgeScope `json:"scope,omitempty"`
 }
 
 // SQLiteStore is the concrete store. A single connection is used so an
@@ -121,7 +142,7 @@ func (s *SQLiteStore) List() ([]*Schedule, error) {
 
 // Create inserts a schedule and returns it with its assigned "sch-<n>" ID.
 func (s *SQLiteStore) Create(sc *Schedule) (*Schedule, error) {
-	meta, err := json.Marshal(scheduleMeta{Goal: sc.Goal, Milestones: sc.Milestones, TemplateLabel: sc.TemplateLabel, TemplateRef: sc.TemplateRef, RunSpec: sc.RunSpec})
+	meta, err := json.Marshal(scheduleMeta{Goal: sc.Goal, Milestones: sc.Milestones, TemplateLabel: sc.TemplateLabel, TemplateRef: sc.TemplateRef, RunSpec: sc.RunSpec, Scope: sc.Scope})
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +165,7 @@ func (s *SQLiteStore) Create(sc *Schedule) (*Schedule, error) {
 // updated row (nil if the id is unknown). Used to re-sync a bound template's
 // compiled run when its per-granularity prompt is edited.
 func (s *SQLiteStore) Update(sc *Schedule) (*Schedule, error) {
-	meta, err := json.Marshal(scheduleMeta{Goal: sc.Goal, Milestones: sc.Milestones, TemplateLabel: sc.TemplateLabel, TemplateRef: sc.TemplateRef, RunSpec: sc.RunSpec})
+	meta, err := json.Marshal(scheduleMeta{Goal: sc.Goal, Milestones: sc.Milestones, TemplateLabel: sc.TemplateLabel, TemplateRef: sc.TemplateRef, RunSpec: sc.RunSpec, Scope: sc.Scope})
 	if err != nil {
 		return nil, err
 	}
@@ -230,6 +251,7 @@ func scanSchedule(sc scanner) (*Schedule, error) {
 			out.TemplateLabel = m.TemplateLabel
 			out.TemplateRef = m.TemplateRef
 			out.RunSpec = m.RunSpec
+			out.Scope = m.Scope
 		}
 	}
 	return out, nil

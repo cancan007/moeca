@@ -101,8 +101,8 @@ type Server struct {
 	srcMu   sync.RWMutex // guards sources
 	sources *tasksource.Registry
 
-	ghMu  sync.RWMutex     // guards ghApp
-	ghApp *githubapp.App   // host-side GitHub App for direct issue pulls (optional)
+	ghMu  sync.RWMutex   // guards ghApp
+	ghApp *githubapp.App // host-side GitHub App for direct issue pulls (optional)
 
 	ltMu     sync.Mutex // guards lastTick
 	lastTick time.Time  // minute of the last scheduler tick (fire-once guard)
@@ -284,6 +284,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /daily/run", s.handleDailyRunDelete)
 	mux.HandleFunc("POST /daily/promote", s.handlePromote)
 	mux.HandleFunc("GET /knowledge", s.handleKnowledge)
+	mux.HandleFunc("GET /knowledge/scope", s.handleKnowledgeScope)
 	mux.HandleFunc("POST /knowledge/org", s.handleKnowledgeOrg)
 	mux.HandleFunc("DELETE /knowledge/org", s.handleKnowledgeOrgDelete)
 	mux.HandleFunc("POST /knowledge/project", s.handleKnowledgeProject)

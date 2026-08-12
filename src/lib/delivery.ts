@@ -46,12 +46,17 @@ export interface Milestone {
   done: boolean;
 }
 
+import type { KnowledgeScope } from "@/lib/schedules";
+
 export interface TaskMeta {
   goal: string;
   milestones: Milestone[];
   /** Assigned agent template ref — see lib/agentTemplates (normalizeRef also
    *  maps values stored before refs existed). */
   template: string;
+  /** Knowledge this task's agents may retrieve, named as a node of the
+   *  Knowledge graph. Absent means no scope — the run searches everything. */
+  scope?: KnowledgeScope;
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -99,6 +104,14 @@ export const delivery = {
       body: JSON.stringify({ repo, branch, base: base ?? "" }),
     }),
   /** A Delivery task's goal + milestones + assigned template (by repo/branch). */
+  /** Resolve a scope node (plus relation hops) to the groups it grants. The
+   *  host owns the graph, so both screens ask it rather than each computing a
+   *  different answer for "project X". */
+  resolveScope: (scope: KnowledgeScope | undefined, depth: number) => {
+    if (!scope) return Promise.resolve<{ groups: string[] | null; scoped: boolean }>({ groups: null, scoped: false });
+    const q = new URLSearchParams({ kind: scope.kind, id: scope.id ?? "", depth: String(depth) });
+    return req<{ groups: string[] | null; scoped: boolean }>(`/knowledge/scope?${q}`);
+  },
   getTaskMeta: (repo: string, branch: string) =>
     req<TaskMeta>(`/task/meta?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`),
   /** Upsert a Delivery task's goal + milestones (goal ⇒ ≥1 milestone). Omitted
@@ -107,6 +120,14 @@ export const delivery = {
     req<{ repo: string; branch: string }>("/task/meta", {
       method: "POST",
       body: JSON.stringify({ repo, branch, goal, milestones }),
+    }),
+  /** Set (or clear) the task's knowledge scope; leaves everything else alone.
+   *  Clearing is stated explicitly because "field omitted" already means
+   *  "leave it alone". */
+  setTaskScope: (repo: string, branch: string, scope: KnowledgeScope | null) =>
+    req<{ repo: string; branch: string }>("/task/meta", {
+      method: "POST",
+      body: JSON.stringify(scope ? { repo, branch, scope } : { repo, branch, clearScope: true }),
     }),
   /** Assign the agent template a task runs with; leaves goal/milestones alone. */
   setTaskTemplate: (repo: string, branch: string, template: string) =>

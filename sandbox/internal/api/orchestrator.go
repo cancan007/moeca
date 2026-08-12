@@ -78,6 +78,12 @@ type Stage struct {
 	// gateway's business and the template's, not the controller's. Absent =>
 	// the stage cannot generate media at all.
 	Media map[string]any `json:"media,omitempty"`
+	// Groups is this stage's knowledge scope, already resolved and widened by
+	// whoever owns the Knowledge graph. Absent falls back to the run's scope;
+	// present means this stage authenticates with a session of its own, because
+	// how far a stage may follow relations is a property of its agent template
+	// rather than of the run.
+	Groups []string `json:"groups,omitempty"`
 	// Web grants this stage the provider-side web_search tool, forwarded
 	// verbatim as ORCHESTRA_WEB_SEARCH. Unlike Media it opens no route out of
 	// the container — the model provider runs the search and returns the
@@ -105,10 +111,16 @@ type runReq struct {
 	// restricts the run to images explicitly approved for unattended use, so a
 	// schedule can never silently start executing an image someone added while
 	// debugging. It only ever narrows what is permitted.
-	Unattended    bool    `json:"unattended"`
-	MaxParallel   int     `json:"maxParallel"`
-	StopOnFailure *bool   `json:"stopOnFailure"`
-	Stages        []Stage `json:"stages"`
+	Unattended bool `json:"unattended"`
+	// Groups is the run's knowledge scope: the groups its agents may retrieve
+	// through the gateway's /rag route. nil means no scope was asked for and
+	// the run uses the shared session, which searches everything; an empty
+	// slice means a run entitled to no knowledge at all. The distinction is
+	// carried all the way to the gateway, so it must not be collapsed here.
+	Groups        []string `json:"groups"`
+	MaxParallel   int      `json:"maxParallel"`
+	StopOnFailure *bool    `json:"stopOnFailure"`
+	Stages        []Stage  `json:"stages"`
 }
 
 // Stage status values.
@@ -175,8 +187,16 @@ type Run struct {
 	// admission so a run cannot start and then fail at stage 7 on a bad image.
 	policies map[string]ImagePolicy
 
-	delegation bool // stages may spawn sub-agents (runtime delegation)
-	maxDepth   int  // delegation depth cap
+	// session is the gateway session this run's stages authenticate with. Set
+	// only when the run asked for a knowledge scope: the scope lives on the
+	// session because the gateway will not accept one from the caller.
+	session string
+	// stageSessions holds the extra sessions minted for stages whose scope
+	// differs from the run's, keyed by stage id. Every one of them is revoked
+	// when the run ends.
+	stageSessions map[string]string
+	delegation    bool // stages may spawn sub-agents (runtime delegation)
+	maxDepth      int  // delegation depth cap
 }
 
 // validateStages checks the DAG is well-formed: non-empty, unique ids, deps that
@@ -289,6 +309,32 @@ func (s *Server) handleRunCreate(w http.ResponseWriter, r *http.Request) {
 		run.Stages = append(run.Stages, state)
 		run.stageByID[st.ID] = state
 		stages[st.ID] = st
+	}
+
+	// A knowledge scope, if the run asked for one. Minted before anything
+	// starts and refused loudly on failure: falling back to the shared session
+	// would silently give the run every group, which is the opposite of what
+	// asking for a scope means.
+	if req.Groups != nil {
+		if s.adminToken() == "" {
+			writeErr(w, 400, "this run asks for a knowledge scope, but the controller has no gateway admin token to mint a session with")
+			return
+		}
+		tok, err := s.mintRunSession(run.ID, req.Groups)
+		if err != nil {
+			writeErr(w, 502, "could not mint a scoped session: "+err.Error())
+			return
+		}
+		run.session = tok
+	}
+
+	// Stages whose scope differs from the run's get a session of their own.
+	// Minted once per distinct group set: a run where every stage follows the
+	// same number of relation hops needs one session, not one per stage.
+	if err := s.mintStageSessions(run, req.Stages); err != nil {
+		s.revokeAllSessions(run)
+		writeErr(w, 502, "could not mint a stage session: "+err.Error())
+		return
 	}
 
 	// Isolated mode: one git worktree per stage. Falls back to shared if the base
@@ -464,6 +510,10 @@ func (s *Server) executeRun(run *Run, stages map[string]Stage, worktree string, 
 		log.Printf("sandbox: run %s finished without producing any files", run.ID)
 	}
 
+	// The run's sessions outlive nothing: its containers are gone and their
+	// scopes have no further use.
+	s.revokeAllSessions(run)
+
 	// Final snapshot: the terminal status and every stage's artifacts.
 	s.archiveRun(run)
 }
@@ -589,7 +639,7 @@ func (s *Server) runStage(run *Run, stage Stage, worktree string, strict bool, o
 	run.mu.Unlock()
 
 	taskID := sanitizeID(run.TaskID + "-" + stage.ID)
-	spec := s.buildSpec(taskID, stageWorktree, pinned, stage.Cmd, env, strict)
+	spec := s.buildSpec(taskID, stageWorktree, pinned, stage.Cmd, env, strict, s.sessionFor(run, stage.ID))
 	// Scope the container name to this run. Names are what docker enforces
 	// uniqueness on, and finished runs keep their containers for log retrieval —
 	// without the run id, re-running a task collides with the previous run's

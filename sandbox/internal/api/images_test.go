@@ -229,7 +229,7 @@ func TestBuildSpecAppliesTheImagePolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := s.buildSpec("t", "/w", poly, []string{"bash", "-lc", "npm ci"}, nil, true)
+	spec := s.buildSpec("t", "/w", poly, []string{"bash", "-lc", "npm ci"}, nil, true, "")
 	if spec.MemoryMB != 4096 || spec.CPUs != 4 {
 		t.Errorf("policy limits not applied: memory=%d cpus=%v", spec.MemoryMB, spec.CPUs)
 	}
@@ -255,7 +255,7 @@ func TestBuildSpecNetworklessPolicyDropsEveryEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := s.buildSpec("t", "/w", media, []string{"ffmpeg"}, map[string]string{"ORCHESTRA_GATEWAY": "http://evil"}, true)
+	spec := s.buildSpec("t", "/w", media, []string{"ffmpeg"}, map[string]string{"ORCHESTRA_GATEWAY": "http://evil"}, true, "")
 
 	if spec.Network != NetworkNone {
 		t.Errorf("network = %q, want %q", spec.Network, NetworkNone)
@@ -279,7 +279,7 @@ func TestSandboxEnvForcesTheRegistryProxy(t *testing.T) {
 		"NPM_CONFIG_REGISTRY": "https://evil.example/npm/",
 		"GOPROXY":             "https://evil.example/go/",
 		"PIP_INDEX_URL":       "https://evil.example/simple/",
-	}, true, false)
+	}, true, false, "")
 
 	want := map[string]string{
 		"NPM_CONFIG_REGISTRY":              "http://orchestra-registry:8791/npm/",

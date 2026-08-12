@@ -50,6 +50,9 @@ type scheduleReq struct {
 	TemplateLabel string            `json:"templateLabel"`
 	TemplateRef   string            `json:"templateRef"`
 	RunSpec       json.RawMessage   `json:"runSpec"`
+	// Scope is the Knowledge node this schedule may read. A pointer so "not
+	// sent" (leave it alone) stays distinct from "sent as null" (no scope).
+	Scope *store.KnowledgeScope `json:"scope"`
 }
 
 // scheduleFromReq validates the request and builds a Schedule. active defaults
@@ -86,6 +89,7 @@ func scheduleFromReq(req *scheduleReq) (*store.Schedule, string) {
 		TemplateLabel: req.TemplateLabel,
 		TemplateRef:   req.TemplateRef,
 		RunSpec:       req.RunSpec,
+		Scope:         req.Scope,
 	}, ""
 }
 
@@ -344,13 +348,17 @@ func (s *Server) launchScheduledRun(sc *store.Schedule, now time.Time) (outputDi
 		return "", "", "", fmt.Errorf("creating output dir: %w", err)
 	}
 	taskID := sanitize(sc.ID + "-" + strconv.FormatInt(now.Unix(), 10))
-	runID, err = s.startRun(taskID, outputDir, sc.RunSpec)
+	// The scope is resolved now rather than when it was chosen: the groups
+	// under a project change as the graph is edited, and a schedule that meant
+	// "this project's knowledge" should follow it.
+	groups, scoped := s.scopeGroups(sc.Scope)
+	runID, err = s.startRun(taskID, outputDir, sc.RunSpec, groups, scoped)
 	return outputDir, "", runID, err
 }
 
 // startRun submits a compiled run spec (stages DAG) to the sandbox controller's
 // orchestrator, injecting the task id + worktree, and returns the run id.
-func (s *Server) startRun(taskID, worktree string, spec json.RawMessage) (string, error) {
+func (s *Server) startRun(taskID, worktree string, spec json.RawMessage, groups []string, scoped bool) (string, error) {
 	var m map[string]any
 	if err := json.Unmarshal(spec, &m); err != nil {
 		return "", fmt.Errorf("bad runSpec: %w", err)
@@ -373,6 +381,21 @@ func (s *Server) startRun(taskID, worktree string, spec json.RawMessage) (string
 	// it states the only valid arrangement rather than hoping the spec does.
 	m["worktreeMode"] = "shared"
 	m["maxParallel"] = 1
+	// Each stage's own scope. The base groups come from the schedule; how far
+	// each stage may follow relations is a property of the agent template it
+	// was compiled from, so the widening happens per stage rather than once for
+	// the run.
+	if scoped {
+		applyStageScopes(m, groups, s.expandGroups)
+	}
+	// The schedule's knowledge scope, stated here rather than trusted from the
+	// stored spec: the schedule row is the authority on what it may read, and a
+	// spec compiled before the scope was chosen would carry none.
+	if scoped {
+		m["groups"] = groups
+	} else {
+		delete(m, "groups")
+	}
 	body, err := json.Marshal(m)
 	if err != nil {
 		return "", err

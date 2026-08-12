@@ -5,6 +5,8 @@ import { useStore, type ReviewTab } from "@/store/useStore";
 import { hostagent, type DiffFile, type PullRequest } from "@/lib/hostagent";
 import { delivery as deliveryApi, type Milestone } from "@/lib/delivery";
 import { templateOptions, normalizeRef, DYNAMIC_REF, type TemplateStores } from "@/lib/agentTemplates";
+import { knowledge as knowledgeApi } from "@/lib/knowledge";
+import type { KnowledgeScope } from "@/lib/schedules";
 import { DiffPane } from "./review/DiffPane";
 import { SourcePane } from "./review/SourcePane";
 import { ArtifactsPane } from "./review/ArtifactsPane";
@@ -158,6 +160,14 @@ export function ReviewDrawer() {
   const tplStores: TemplateStores = { solos, staticTpls, providers, tools };
   const [tplId, setTplId] = useState("");
   const [tplOpen, setTplOpen] = useState(false);
+  // The task's knowledge scope, and the graph to pick it from. Same three
+  // states as a schedule: unset (searches everything), Global (only what is
+  // everyone's), or a node of the graph.
+  const [scope, setScope] = useState<KnowledgeScope | undefined>(undefined);
+  const [tree, setTree] = useState<{ orgs: { id: string; name: string }[]; projects: { id: string; name: string; orgId: string }[] }>({ orgs: [], projects: [] });
+  useEffect(() => {
+    knowledgeApi.graph().then((g) => setTree({ orgs: g.orgs, projects: g.projects })).catch(() => {});
+  }, []);
   const [diffFiles, setDiffFiles] = useState<DiffFile[] | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
@@ -180,10 +190,15 @@ export function ReviewDrawer() {
     if (!live) { setTplId(""); return; }
     let cancelled = false;
     deliveryApi.getTaskMeta(repo, branch)
-      .then((m) => { if (!cancelled) setTplId(m.template ?? ""); })
-      .catch(() => { if (!cancelled) setTplId(""); });
+      .then((m) => { if (!cancelled) { setTplId(m.template ?? ""); setScope(m.scope); } })
+      .catch(() => { if (!cancelled) { setTplId(""); setScope(undefined); } });
     return () => { cancelled = true; };
   }, [live, repo, branch]);
+
+  const assignScope = (next: KnowledgeScope | undefined) => {
+    setScope(next);
+    if (live) deliveryApi.setTaskScope(repo, branch, next ?? null).catch((e) => setActionErr(e instanceof Error ? e.message : String(e)));
+  };
 
   const assignTemplate = (id: string) => {
     setTplId(id);
@@ -311,6 +326,36 @@ export function ReviewDrawer() {
                   })}
                 </div>
               )}
+            </div>
+
+            {/* Knowledge scope: what this task's agents may retrieve. How far
+                each of them may then follow relations is a property of the
+                agent template, not of the task. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--bg-card)", border: "1px solid var(--bd2)", borderRadius: 9, padding: "10px 13px" }}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--tx-faint)" strokeWidth="1.5"><path d="M2 4.5C2 3 4.7 2 8 2s6 1 6 2.5V11c0 1.5-2.7 2.5-6 2.5S2 12.5 2 11z" /><path d="M2 4.5C2 6 4.7 7 8 7s6-1 6-2.5" /></svg>
+              <span style={{ font: "600 10.5px 'IBM Plex Sans'", color: "var(--tx2)" }}>{t("daily.knowledgeScope")}</span>
+              <div style={{ flex: 1 }} />
+              <select
+                value={scope ? `${scope.kind}:${scope.id ?? ""}` : ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) { assignScope(undefined); return; }
+                  const [kind, id] = v.split(":");
+                  assignScope({ kind: kind as KnowledgeScope["kind"], id: id || undefined });
+                }}
+                style={{ background: "var(--bg-card2)", border: "1px solid var(--bd2)", borderRadius: 7, padding: "6px 9px", font: "500 10.5px 'IBM Plex Sans'", color: "var(--tx)", outline: "none", maxWidth: 260 }}
+              >
+                <option value="">{t("daily.scopeUnset")}</option>
+                <option value="global:">{t("daily.scopeGlobal")}</option>
+                {tree.orgs.map((o) => (
+                  <optgroup key={o.id} label={o.name}>
+                    <option value={`organization:${o.id}`}>{t("daily.scopeWholeOrg", { name: o.name })}</option>
+                    {tree.projects.filter((p) => p.orgId === o.id).map((p) => (
+                      <option key={p.id} value={`project:${p.id}`}>{p.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
             </div>
 
             {/* CI gate + approval (review stage only — hidden for inbox) */}

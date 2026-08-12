@@ -63,8 +63,12 @@ type Gateway struct {
 	log            *logger
 	limiters       *limiterSet
 	budget         *budgetLedger
-	transport      http.RoundTripper
-	now            func() time.Time
+	// sessions are the ones minted per run at runtime, alongside cfg.Sessions.
+	// A run's retrieval scope has nowhere else to live: the caller may not name
+	// its own groups, so the session it presents has to carry them.
+	sessions  *sessionRegistry
+	transport http.RoundTripper
+	now       func() time.Time
 }
 
 // New builds a Gateway. logW receives JSON access lines; nowFn/transport are
@@ -99,6 +103,7 @@ func New(cfg *config.Config, logW io.Writer, nowFn func() time.Time, transport h
 		log:            newLogger(logW),
 		limiters:       newLimiterSet(nowFn),
 		budget:         newBudgetLedger(),
+		sessions:       newSessionRegistry(),
 		transport:      transport,
 		now:            nowFn,
 	}
@@ -126,6 +131,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/_gateway/providers/secret":
 		g.handleProviderSecret(w, r)
+		return
+	case AdminSessionsPath:
+		g.handleSessions(w, r)
 		return
 	}
 
@@ -387,10 +395,21 @@ func extractModel(b []byte) string {
 // token. When no sessions are configured, an anonymous session is allowed
 // (local dev) with no group policy.
 func (g *Gateway) authenticate(r *http.Request) (id string, groups []string, ok bool) {
+	tok := r.Header.Get(SessionHeader)
+	// A session minted for one run wins over the static ones: it is the only
+	// place a per-run retrieval scope can come from, and it must work even in a
+	// configuration that defines no static sessions at all.
+	if tok != "" {
+		if s, found := g.sessions.get(tok); found {
+			if s.ID != "" {
+				return s.ID, s.Groups, true
+			}
+			return "run", s.Groups, true
+		}
+	}
 	if len(g.cfg.Sessions) == 0 {
 		return "anonymous", nil, true
 	}
-	tok := r.Header.Get(SessionHeader)
 	if tok == "" {
 		return "", nil, false
 	}

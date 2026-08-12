@@ -65,7 +65,6 @@ const (
 	ScopeGlobal       = "global"
 	ScopeProject      = "project"
 	ScopeOrganization = "organization"
-	ScopeManual       = "manual"
 )
 
 // SourceSpec declares one knowledge source to index. A source is either a local
@@ -77,7 +76,7 @@ type SourceSpec struct {
 	Kind  string `json:"kind"`  // "local" | "external"
 	Root  string `json:"root"`  // local: directory to walk
 	URL   string `json:"url"`   // external: https URL to fetch
-	Scope string `json:"scope"` // "project" | "organization" | "manual"
+	Scope string `json:"scope"` // "global" | "project" | "organization"
 	Name  string `json:"name"`  // optional display label
 	// Groups are permission labels; a scoped search sees this source only if it
 	// permits one of them. A source with no groups is visible to unscoped
@@ -111,7 +110,7 @@ type Source struct {
 	Path   string `json:"path"`
 	Chunks int    `json:"chunks"`
 	Kind   string `json:"kind"`            // "local" | "external"
-	Scope  string `json:"scope"`           // "project" | "organization" | "manual"
+	Scope  string `json:"scope"`           // "global" | "project" | "organization"
 	URL    string `json:"url,omitempty"`   // external sources only
 	Error  string `json:"error,omitempty"` // per-source ingestion error, if any
 	// Media is what the file is (text / csv / pdf / image / video / subtitle)
@@ -354,8 +353,10 @@ func normalizeScope(s string) string {
 		return ScopeProject
 	case ScopeOrganization, "org":
 		return ScopeOrganization
-	case ScopeManual:
-		return ScopeManual
+	// "manual" was a fourth tier that the filter never treated differently from
+	// project or organization, and that nothing selected. A source carrying it
+	// normalises to global — the default — rather than to a tier its owner did
+	// not choose.
 	default:
 		return ScopeGlobal
 	}

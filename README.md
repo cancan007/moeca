@@ -38,7 +38,29 @@ layer-by-layer rationale.
   **Tools** — define gateway-routed HTTP tools (params → `{{substituted}}`). **Proxy / providers** —
   add/edit LLM providers (Anthropic / OpenAI / Gemini and custom): endpoint, models, and **API keys
   (write-only, OS keychain, injected by the gateway — never in localStorage / the container / a
-  sandbox)**. **Task sources** — add/remove the Daily pull providers (Jira / Trello / Notion);
+  sandbox)**.
+  A Daily schedule can also name a **knowledge scope** — a place in the Knowledge graph:
+  **Global**, an organization, or a project. The node is stored and resolved to groups at
+  launch, so a group added to that project later is included without re-saving the
+  schedule. Global resolves to *no* groups rather than to everything: globally-scoped
+  sources are exempt from the group filter by design, so "entitled to nothing" already
+  means "only what is everyone's". The resolved groups ride on a gateway **session minted
+  for that run** — a sandbox cannot name its own groups, because the gateway states
+  `X-Orchestra-Groups` about the caller and discards whatever arrived, so a scope the
+  caller claimed would be decoration. The sandbox controller mints it (it holds the raw
+  admin token, which no sandbox ever sees) and revokes it when the run ends; a schedule
+  with no scope searches everything, as before. **Delivery tasks take the same scope**,
+  stored on the task rather than the schedule.
+
+  How far a run may reach *beyond* its scope is a property of the agent template: a Solo
+  declares how many **knowledge relations** it may follow out of the scope (0 by default).
+  Relations were documentation — "this group requires that one" — so reading them as
+  grants is only safe because of that bound; without it a single edge drawn on the canvas
+  could connect every group in the graph. Traversal is directed, and `conflicts-with` is
+  never followed: an edge whose meaning is "these two disagree" must not also grant. Two
+  stages of one run can therefore hold different entitlements, so the controller mints one
+  session per distinct group set rather than one per run.
+  **Task sources** — add/remove the Daily pull providers (Jira / Trello / Notion);
   persisted host-side and hot-reloaded, adapters route through the gateway (which injects each
   provider's credentials). Sandbox isolation + forbidden-command policy.
 - **Workspace** — VSCode-like worktree editor (file tree, syntax highlight, references) opened

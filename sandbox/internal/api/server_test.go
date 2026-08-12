@@ -192,7 +192,7 @@ func TestBuildSpecAppliesConfigDefaultsAndMergesEnv(t *testing.T) {
 		Env:     map[string]string{"ANTHROPIC_BASE_URL": "http://host.docker.internal:8787/anthropic"},
 	})
 
-	spec := s.buildSpec("web-app-feat", "/tmp/wt/feat", ImagePolicy{Ref: "orchestra/agent:latest"}, []string{"claude"}, map[string]string{"EXTRA": "1"}, false)
+	spec := s.buildSpec("web-app-feat", "/tmp/wt/feat", ImagePolicy{Ref: "orchestra/agent:latest"}, []string{"claude"}, map[string]string{"EXTRA": "1"}, false, "")
 
 	if spec.TaskID != "web-app-feat" || spec.WorktreePath != "/tmp/wt/feat" {
 		t.Errorf("spec not carried through: %+v", spec)
@@ -217,7 +217,7 @@ func TestBuildSpecStrictIsolationOverridesClientGatewayBase(t *testing.T) {
 		Env:               map[string]string{"ANTHROPIC_BASE_URL": "http://host.docker.internal:8787/anthropic"},
 	})
 
-	strict := s.buildSpec("t1", "/w", ImagePolicy{Ref: "orchestra/agent:latest"}, nil, map[string]string{"ANTHROPIC_BASE_URL": "http://evil/anthropic"}, true)
+	strict := s.buildSpec("t1", "/w", ImagePolicy{Ref: "orchestra/agent:latest"}, nil, map[string]string{"ANTHROPIC_BASE_URL": "http://evil/anthropic"}, true, "")
 	if strict.Network != "orchestra-egress" {
 		t.Errorf("strict network = %q, want orchestra-egress", strict.Network)
 	}
@@ -225,7 +225,7 @@ func TestBuildSpecStrictIsolationOverridesClientGatewayBase(t *testing.T) {
 		t.Errorf("strict ANTHROPIC_BASE_URL = %q; a client value must not override the strict gateway base", got)
 	}
 
-	relaxed := s.buildSpec("t2", "/w", ImagePolicy{Ref: "orchestra/agent:latest"}, nil, nil, false)
+	relaxed := s.buildSpec("t2", "/w", ImagePolicy{Ref: "orchestra/agent:latest"}, nil, nil, false, "")
 	if relaxed.Network != "orchestra-relaxed" {
 		t.Errorf("relaxed network = %q, want orchestra-relaxed", relaxed.Network)
 	}

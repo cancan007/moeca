@@ -30,7 +30,7 @@ pub fn run() {
             // gateway receives only its hash; the raw token stays in this
             // process (managed state) and never reaches the webview or a sandbox.
             let (admin_sha256, admin_token) = providers::generate_admin_token();
-            let children = sidecars::spawn_all(config_dir.clone(), &admin_sha256);
+            let children = sidecars::spawn_all(config_dir.clone(), &admin_sha256, &admin_token);
             app.manage(Sidecars(Mutex::new(children)));
             // Kept so registering a knowledge folder can restart the indexer
             // with the same configuration the app booted with.

@@ -7,7 +7,7 @@ const BASE = import.meta.env.VITE_RAG_URL ?? "http://127.0.0.1:8790";
 export type RagKind = "local" | "external";
 /** Retrieval scope. "global" is the default and the only one that bypasses the
  *  group filter — everything else is subject to the run's granted groups. */
-export type RagScope = "global" | "project" | "organization" | "manual";
+export type RagScope = "global" | "project" | "organization";
 
 /** What the source file is. */
 export type RagMedia = "text" | "csv" | "subtitle" | "pdf" | "image" | "video";
@@ -54,7 +54,6 @@ export const RAG_SCOPES: { id: RagScope; labelKey: string; hint: string; color: 
   { id: "global", labelKey: "rag.scopes.global", hint: "default", color: "#67c9a4" },
   { id: "project", labelKey: "rag.scopes.project", hint: "secure", color: "#34d3e0" },
   { id: "organization", labelKey: "rag.scopes.organization", hint: "broad", color: "#e0a83e" },
-  { id: "manual", labelKey: "rag.scopes.manual", hint: "manual", color: "#b08ad9" },
 ];
 
 export interface RagStatus {

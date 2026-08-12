@@ -69,6 +69,11 @@ type Config struct {
 	// per-service base URLs (ANTHROPIC_BASE_URL, GITHUB_API_URL, ORCHESTRA_GATEWAY)
 	// from it for strict sandboxes, so a client cannot point egress elsewhere.
 	GatewayStrictBase string `json:"gatewayStrictBase"`
+	// GatewayAdminBase is the gateway's LOOPBACK origin, used only to mint a
+	// session per run (see runsession.go). It is deliberately a different URL
+	// from GatewayStrictBase: the admin API is reachable from the host and never
+	// from inside the egress island.
+	GatewayAdminBase string `json:"gatewayAdminBase"`
 	// RegistryStrictBase is the package-registry proxy origin as seen from inside
 	// the egress network, e.g. "http://orchestra-registry:8791". The controller
 	// derives NPM_CONFIG_REGISTRY / PIP_INDEX_URL / GOPROXY from it, so a stage
@@ -120,6 +125,7 @@ const (
 	defaultEgressNetwork      = "orchestra-egress"
 	defaultRelaxedNetwork     = "orchestra-relaxed"
 	defaultGatewayStrictBase  = "http://orchestra-gateway:8787"
+	defaultGatewayAdminBase   = "http://127.0.0.1:8787"
 	defaultRegistryStrictBase = "http://orchestra-registry:8791"
 )
 
@@ -131,6 +137,11 @@ func (c *Config) egressNetwork() string {
 // relaxedNetwork returns the configured bridge network name (with fallback).
 func (c *Config) relaxedNetwork() string {
 	return firstNonEmpty(c.RelaxedNetwork, defaultRelaxedNetwork)
+}
+
+// gatewayAdminBase returns the loopback gateway origin for the admin API.
+func (c *Config) gatewayAdminBase() string {
+	return strings.TrimRight(firstNonEmpty(c.GatewayAdminBase, defaultGatewayAdminBase), "/")
 }
 
 // gatewayStrictBase returns the in-egress-network gateway origin (with fallback).
@@ -224,7 +235,7 @@ type idReq struct {
 //     `npm install` at a registry of its choosing.
 //   - Resource caps and scratch mounts come from the policy, clamped to the
 //     configured ceilings.
-func (s *Server) buildSpec(taskID, worktree string, policy ImagePolicy, cmd []string, reqEnv map[string]string, strict bool) docker.Spec {
+func (s *Server) buildSpec(taskID, worktree string, policy ImagePolicy, cmd []string, reqEnv map[string]string, strict bool, session string) docker.Spec {
 	network := s.cfg.relaxedNetwork()
 	if strict {
 		network = s.cfg.egressNetwork()
@@ -238,7 +249,7 @@ func (s *Server) buildSpec(taskID, worktree string, policy ImagePolicy, cmd []st
 		WorktreePath: worktree,
 		Image:        firstNonEmpty(policy.Ref, s.cfg.Image),
 		Cmd:          cmd,
-		Env:          s.sandboxEnv(reqEnv, strict, policy.Network == NetworkNone),
+		Env:          s.sandboxEnv(reqEnv, strict, policy.Network == NetworkNone, session),
 		Network:      network,
 		MemoryMB:     firstPositiveInt(policy.MemoryMB, s.cfg.MemoryMB),
 		CPUs:         firstPositiveFloat(policy.CPUs, s.cfg.CPUs),
@@ -275,7 +286,7 @@ var networkVars = []string{
 //
 // A networkless stage (an image policy with network "none") gets none of them.
 // Secrets never flow through here.
-func (s *Server) sandboxEnv(reqEnv map[string]string, strict, networkless bool) map[string]string {
+func (s *Server) sandboxEnv(reqEnv map[string]string, strict, networkless bool, session string) map[string]string {
 	merged := make(map[string]string, len(s.cfg.Env)+len(reqEnv)+8)
 	for k, v := range s.cfg.Env {
 		merged[k] = v
@@ -296,7 +307,11 @@ func (s *Server) sandboxEnv(reqEnv map[string]string, strict, networkless bool) 
 		merged["ANTHROPIC_BASE_URL"] = base + "/anthropic"
 		merged["GITHUB_API_URL"] = base + "/github"
 		merged["ORCHESTRA_GATEWAY"] = base
-		if s.cfg.SessionToken != "" {
+		// The run's own session when it has one (it carries the knowledge
+		// scope); the shared one otherwise, exactly as before.
+		if session != "" {
+			merged["ORCHESTRA_SESSION"] = session
+		} else if s.cfg.SessionToken != "" {
 			merged["ORCHESTRA_SESSION"] = s.cfg.SessionToken
 		}
 		for k, v := range registryEnv(s.cfg.registryStrictBase()) {

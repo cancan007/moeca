@@ -129,7 +129,7 @@ fn ensure_shareable_config_dir(dir: Option<PathBuf>) -> Option<PathBuf> {
 /// rather than aborting app startup, so the UI still runs in mock mode.
 /// `admin_sha256` is the hex SHA-256 of the admin token; the gateway gets only
 /// the hash (the raw token stays in the Tauri process).
-pub fn spawn_all(config_dir: Option<PathBuf>, admin_sha256: &str) -> Vec<Child> {
+pub fn spawn_all(config_dir: Option<PathBuf>, admin_sha256: &str, admin_token: &str) -> Vec<Child> {
     let mut children = Vec::new();
 
     // Ensure the config dir is one Docker can bind-mount (the bundled
@@ -176,6 +176,13 @@ pub fn spawn_all(config_dir: Option<PathBuf>, admin_sha256: &str) -> Vec<Child> 
         // looking somewhere else than the shell does.
         cmd.env("PATH", augmented_path());
         cmd.env("ORCHESTRA_DOCKER_BIN", docker_bin());
+        // The sandbox controller mints a gateway session per run so a run can
+        // carry its own knowledge scope. That needs the RAW admin token, which
+        // no sandbox ever receives — the controller is a host process, and it
+        // is already the component that decides what a sandbox may reach.
+        if svc.bin.ends_with("sandbox") {
+            cmd.env("ORCHESTRA_ADMIN_TOKEN", admin_token);
+        }
         cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
         match cmd.spawn() {
             Ok(child) => {

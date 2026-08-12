@@ -82,8 +82,10 @@ func TestStripHTML(t *testing.T) {
 func TestNormalizeScope(t *testing.T) {
 	cases := map[string]string{
 		"org": ScopeOrganization, "organization": ScopeOrganization,
-		"manual": ScopeManual, "project": ScopeProject,
-		"global": ScopeGlobal, "": ScopeGlobal, "weird": ScopeGlobal,
+		"project": ScopeProject,
+		// "manual" was a fourth tier the filter never distinguished and nothing
+		// selected; a source still carrying it lands on the default.
+		"global": ScopeGlobal, "": ScopeGlobal, "weird": ScopeGlobal, "manual": ScopeGlobal,
 	}
 	for in, want := range cases {
 		if got := normalizeScope(in); got != want {
@@ -112,7 +114,7 @@ func TestExternalAndScopedSources(t *testing.T) {
 		Sources: []SourceSpec{
 			{Kind: KindLocal, Root: root, Scope: ScopeProject},
 			{Kind: KindExternal, URL: doc.URL, Scope: "org", Name: "AlphaDoc"},
-			{Kind: KindExternal, URL: "http://insecure.example/x", Scope: ScopeManual},
+			{Kind: KindExternal, URL: "http://insecure.example/x", Scope: ScopeProject},
 		},
 		Gateway: gw.URL, Session: "sess", EmbedPrefix: "/openai", EmbedModel: "m",
 	})
@@ -130,7 +132,7 @@ func TestExternalAndScopedSources(t *testing.T) {
 			ext = s
 		case s.Kind == KindLocal:
 			loc = s
-		case s.Scope == ScopeManual:
+		case s.Kind == KindExternal:
 			insecure = s
 		}
 	}
