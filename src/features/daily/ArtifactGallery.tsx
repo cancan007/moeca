@@ -229,9 +229,28 @@ function ArtifactCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
           // shows is what the file is.
           <img src={dailyApi.artifactUrl(run.id, art.path)} alt={art.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : art.kind === "video" ? (
-          <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: 0, height: 0, borderLeft: "10px solid #fff", borderTop: "6px solid transparent", borderBottom: "6px solid transparent", marginLeft: 3 }} />
-          </div>
+          // A frame of the video itself, for the same reason the image card
+          // shows the image: a card that only says "this is a video" cannot be
+          // told apart from the next video, and the one thing worth checking at
+          // a glance is what was actually produced.
+          //
+          // `#t=0.1` makes the browser paint a frame instead of a black canvas,
+          // and preload="metadata" plus the artifact route's byte-range support
+          // means this costs a few KB rather than the whole file.
+          <>
+            <video
+              src={`${dailyApi.artifactUrl(run.id, art.path)}#t=0.1`}
+              muted
+              playsInline
+              preload="metadata"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 0, height: 0, borderLeft: "10px solid #fff", borderTop: "6px solid transparent", borderBottom: "6px solid transparent", marginLeft: 3 }} />
+              </div>
+            </div>
+          </>
         ) : (
           <span style={{ font: "500 10px 'IBM Plex Mono'", color: "var(--tx-faint)", textTransform: "uppercase" }}>
             {art.name.split(".").pop()}

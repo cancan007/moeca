@@ -211,27 +211,65 @@ function expandNode(
  */
 function expandSupervisor(sup: SupervisorTemplate, ctx: CompileCtx, prefix: string, incoming: string[], _visited: Set<string>): Expansion {
   const s = resolveSolo(ctx, sup.supervisor);
-  const plan = stageFromSolo(ctx, `${prefix}sup-plan`, s.solo, s.provider || undefined, incoming, {
-    system: `${s.solo ? soloSystem(s.solo) : ""}\n\n${i18n.t("prompts.supervisor")}`,
-  });
-  if (!plan) return { stages: [], exitIds: incoming };
-  const stages: RunStage[] = [plan];
+  const planId = `${prefix}sup-plan`;
 
+  // Workers are compiled before the plan, because the plan has to be told what
+  // they are. They depend on the plan's id, which is known up front.
+  const stages: RunStage[] = [];
   const workerIds: string[] = [];
   sup.workers.forEach((wid, i) => {
     const w = resolveSolo(ctx, wid);
-    const st = stageFromSolo(ctx, `${prefix}worker-${i}-${wid}`, w.solo, w.provider || undefined, [plan.id], {
+    const st = stageFromSolo(ctx, `${prefix}worker-${i}-${wid}`, w.solo, w.provider || undefined, [planId], {
       system: `${w.solo ? soloSystem(w.solo) : ""}\n\n${i18n.t("prompts.worker")}`,
     });
     if (st) { stages.push(st); workerIds.push(st.id); }
   });
 
-  const integrate = stageFromSolo(ctx, `${prefix}sup-integrate`, s.solo, s.provider || undefined, workerIds.length ? workerIds : [plan.id], {
+  const plan = stageFromSolo(ctx, planId, s.solo, s.provider || undefined, incoming, {
+    system: `${s.solo ? soloSystem(s.solo) : ""}\n\n${i18n.t("prompts.supervisor")}\n\n${workerRoster(stages)}`,
+  });
+  if (!plan) return { stages: [], exitIds: incoming };
+
+  const integrate = stageFromSolo(ctx, `${prefix}sup-integrate`, s.solo, s.provider || undefined, workerIds.length ? workerIds : [planId], {
     system: `${s.solo ? soloSystem(s.solo) : ""}\n\n${i18n.t("prompts.integrate")}`,
   });
-  if (!integrate) return { stages, exitIds: [plan.id] };
-  stages.push(integrate);
-  return { stages, exitIds: [integrate.id] };
+  const out = [plan, ...stages];
+  if (!integrate) return { stages: out, exitIds: [plan.id] };
+  out.push(integrate);
+  return { stages: out, exitIds: [integrate.id] };
+}
+
+/**
+ * What the supervisor is actually commanding.
+ *
+ * Without this the plan is written blind: a supervisor asked for a five-second
+ * cat video divided the job across three workers when the template had one,
+ * so the stage that was to encode the video never existed and nothing produced
+ * it. It also reasoned its way to drawing frames with OpenCV — because it could
+ * not know that the one worker it did have held a `generate_video` tool.
+ *
+ * Everything here is already decided by the time the plan runs. Telling the
+ * planner is the whole fix.
+ */
+export function workerRoster(workers: RunStage[]): string {
+  if (workers.length === 0) return i18n.t("prompts.roster.none");
+  const lines = [i18n.t("prompts.roster.title", { count: workers.length })];
+  for (const w of workers) {
+    lines.push(`\n- ${w.id}${w.name && w.name !== w.id ? `（${w.name}${w.role ? ` · ${w.role}` : ""}）` : ""}`);
+    if (w.cmd?.length) {
+      lines.push(`  ${i18n.t("prompts.roster.command", { cmd: w.cmd.join(" "), image: w.image || "base" })}`);
+      continue;
+    }
+    const names = (w.tools ?? []).map((t) => t.name);
+    lines.push(`  ${names.length ? i18n.t("prompts.roster.tools", { list: names.join(", ") }) : i18n.t("prompts.roster.noTools")}`);
+  }
+  // The third way that cat video failed: scripts were written that nothing
+  // could run. An agent stage edits files and calls tools; only a command stage
+  // executes anything in /work.
+  if (!workers.some((w) => w.cmd?.length)) {
+    lines.push(`\n${i18n.t("prompts.roster.noExec")}`);
+  }
+  return lines.join("\n");
 }
 
 /** Compile a Graph template (nodes may be Solos or nested Templates) to a DAG. */

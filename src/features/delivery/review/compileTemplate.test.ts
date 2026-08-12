@@ -177,3 +177,61 @@ describe("artifact tools route independently of the agent's own provider", () =>
     expect(stage.tools?.[0]?.output).toBeUndefined();
   });
 });
+
+// The supervisor plans blind unless it is told what it commands. Asked for a
+// five-second cat video, one divided the job across three workers when the
+// template had exactly one — so the stage that was to encode the video never
+// existed, and nothing produced it. It also reasoned its way to drawing frames
+// with OpenCV, not knowing that its single worker held a generate_video tool.
+describe("the supervisor is told what it commands", () => {
+  const videoTool: ToolDef = {
+    id: "gen-video", name: "generate_video", description: "", params: [],
+    method: "POST", path: "/openai/v1/videos", headers: {}, body: "{}", targetHeader: "",
+    output: { kind: "binary", extensions: [".mp4"] },
+  };
+  const sup = (workers: string[]): SupervisorTemplate =>
+    ({ id: "t", name: "team", desc: "", pattern: "supervisor", supervisor: "lead", workers }) as SupervisorTemplate;
+
+  const planOf = (stages: { id: string; system: string }[]) => stages.find((s) => s.id === "sup-plan")!.system;
+
+  it("names every worker, and only the workers that exist", () => {
+    const solos = [agent("lead"), { ...agent("drawer"), toolIds: ["gen-video"] } as SoloAgent];
+    const stages = compileSupervisor(sup(["drawer"]), solos, providers, [videoTool], [], "猫の動画");
+    const system = planOf(stages);
+
+    expect(system).toContain("worker-0-drawer");
+    // The count has to be the real one: "3 workers" is what produced a plan
+    // with a stage that never ran.
+    expect(system).toContain("1");
+  });
+
+  // The capability that would have done the job in one call.
+  it("lists the tools each worker holds", () => {
+    const solos = [agent("lead"), { ...agent("drawer"), toolIds: ["gen-video"] } as SoloAgent];
+    const system = planOf(compileSupervisor(sup(["drawer"]), solos, providers, [videoTool], [], "t"));
+    expect(system).toContain("generate_video");
+  });
+
+  // Scripts were written that nothing could run: an agent stage has no shell.
+  it("says when nothing in the composition can execute code", () => {
+    const solos = [agent("lead"), agent("drawer")];
+    const system = planOf(compileSupervisor(sup(["drawer"]), solos, providers, [], [], "t"));
+    expect(system.toLowerCase()).toMatch(/実行|execute/);
+  });
+
+  it("describes a command worker by what it runs", () => {
+    const solos = [agent("lead"), command("encoder", "ffmpeg -i in.png out.mp4", "media")];
+    const system = planOf(compileSupervisor(sup(["encoder"]), solos, providers, [], [], "t"));
+    expect(system).toContain("ffmpeg -i in.png out.mp4");
+    expect(system).toContain("media");
+  });
+
+  // Wiring is unchanged: plan first, then workers, then integrate.
+  it("keeps the DAG shape", () => {
+    const solos = [agent("lead"), agent("a"), agent("b")];
+    const stages = compileSupervisor(sup(["a", "b"]), solos, providers, [], [], "t");
+    expect(stages.map((s) => s.id)).toEqual(["sup-plan", "worker-0-a", "worker-1-b", "sup-integrate"]);
+    expect(stages[1].dependsOn).toEqual(["sup-plan"]);
+    expect(stages[3].dependsOn).toEqual(["worker-0-a", "worker-1-b"]);
+  });
+});

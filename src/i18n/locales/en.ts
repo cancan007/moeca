@@ -875,6 +875,14 @@ export const en: Dict = {
   },
 
   prompts: {
+    roster: {
+      title: "These {{count}} workers are the whole of what this composition runs. Do not put a worker in the plan that is not listed here.",
+      none: "This composition has no workers. Your own output is the final result.",
+      tools: "Tools: {{list}}",
+      noTools: "No tools (reading and writing files in /work only)",
+      command: "Command stage: runs `{{cmd}}` in the {{image}} image",
+      noExec: "No worker can execute code. An agent reads and writes files and calls tools, nothing more — a plan that writes a script for someone to run will not work.",
+    },
     roles: {
       plan: "You are the planner. Break the request into the smallest workable tasks and state their dependencies and acceptance criteria explicitly. Do not implement anything — output only a plan the next stage can start from.",
       build: "You are the implementer. Follow the given plan strictly and keep the diff minimal. Commit only code that passes the tests, and make no changes outside the specification.",
