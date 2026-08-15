@@ -3,6 +3,7 @@ package gateway
 import (
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // This file reconciles the token budget against REAL provider usage instead of a
@@ -80,4 +81,29 @@ func usageFor(tail []byte, k usageKeys) (int, int, bool) {
 		return in, out, true
 	}
 	return 0, 0, false
+}
+
+// isTextual reports whether a response body is the kind of thing a model reads.
+//
+// The byte estimate behind the token budget assumes prose: roughly four bytes
+// per token. That holds for JSON and SSE and fails completely for a PNG or an
+// mp4, where the bytes are an artifact the model never sees. Charging those as
+// tokens is not a rounding error — it is a category mistake, and it was enough
+// to exhaust a session's whole budget on three generated files.
+func isTextual(contentType string) bool {
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+	switch {
+	case ct == "":
+		return true // unknown: assume text, which is the conservative charge
+	case strings.HasPrefix(ct, "text/"):
+		return true
+	case strings.Contains(ct, "json"), strings.Contains(ct, "event-stream"),
+		strings.Contains(ct, "xml"), strings.Contains(ct, "yaml"):
+		return true
+	default:
+		return false
+	}
 }

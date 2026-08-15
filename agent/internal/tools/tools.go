@@ -441,6 +441,38 @@ func substitute(s string, args map[string]any) string {
 	return s
 }
 
+// substituteJSON fills a JSON body template, escaping each value so that it
+// remains valid JSON.
+//
+// The placeholders in a body sit INSIDE string literals — `"prompt":"{{prompt}}"`
+// — and the values come from a model. A prompt with a quotation mark, a
+// backslash or a line break therefore produced a body the provider could not
+// parse, and it answered `invalid_json` with no hint about which field was at
+// fault. It cost a run: the model rewrote its prompt three times, never
+// suspecting that the words were fine and the transport was not. Prose spanning
+// paragraphs is the ordinary case for a generation prompt, so this was not an
+// edge.
+//
+// Path and headers keep the raw substitution: they are not JSON, and escaping
+// them would corrupt them instead.
+func substituteJSON(s string, args map[string]any) string {
+	for k, v := range args {
+		s = strings.ReplaceAll(s, "{{"+k+"}}", jsonEscape(valueString(v)))
+	}
+	return s
+}
+
+// jsonEscape renders s as the inside of a JSON string — quotes, backslashes,
+// control characters and line breaks all made safe — without the surrounding
+// quotes, because the template already supplies those.
+func jsonEscape(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil || len(b) < 2 {
+		return s
+	}
+	return string(b[1 : len(b)-1])
+}
+
 // unfilled matches a {{placeholder}} the model supplied no argument for.
 var unfilled = regexp.MustCompile(`^\{\{[A-Za-z0-9_.-]+\}\}$`)
 

@@ -26,7 +26,12 @@ import (
 	"time"
 )
 
-// DefaultTimeout bounds a single Messages API call. LLM turns are long
+// DefaultTimeout bounds a single Messages API call. It is deliberately SHORTER
+// than the gateway's own request timeout, so that a call which runs too long is
+// abandoned here — by the party that can retry — and a "deadline exceeded" in
+// the log has one possible source rather than two.
+//
+// LLM turns are long
 // (thinking + generation), so this is generous.
 const DefaultTimeout = 300 * time.Second
 

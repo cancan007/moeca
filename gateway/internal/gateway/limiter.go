@@ -7,12 +7,12 @@ import (
 
 // tokenBucket is a simple, dependency-free rate limiter. rps <= 0 means allow.
 type tokenBucket struct {
-	mu       sync.Mutex
-	rps      float64
-	burst    float64
-	tokens   float64
-	last     time.Time
-	nowFn    func() time.Time
+	mu     sync.Mutex
+	rps    float64
+	burst  float64
+	tokens float64
+	last   time.Time
+	nowFn  func() time.Time
 }
 
 func newTokenBucket(rps float64, burst int, nowFn func() time.Time) *tokenBucket {
@@ -50,9 +50,9 @@ func (t *tokenBucket) allow() bool {
 
 // limiterSet lazily creates one bucket per (session, service) key.
 type limiterSet struct {
-	mu       sync.Mutex
-	buckets  map[string]*tokenBucket
-	nowFn    func() time.Time
+	mu      sync.Mutex
+	buckets map[string]*tokenBucket
+	nowFn   func() time.Time
 }
 
 func newLimiterSet(nowFn func() time.Time) *limiterSet {

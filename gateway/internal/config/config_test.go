@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestExpandEnv(t *testing.T) {
@@ -181,5 +182,24 @@ func TestDenyValidation(t *testing.T) {
 	c.Deny = []DenyRule{{Scope: "command", Pattern: "  "}}
 	if err := c.normalizeAndValidate(); err == nil {
 		t.Error("empty pattern should fail validation")
+	}
+}
+
+// The gateway must outlast the agent's own model-call timeout. Equal deadlines
+// meant a timed-out call could have come from either side, and the log says
+// only "deadline exceeded" — so the pair is staggered, and the agent (the party
+// that can retry) is the one that gives up first.
+func TestTheDefaultTimeoutOutlastsTheAgents(t *testing.T) {
+	const agentTimeout = 300 * time.Second // agent/internal/llm.DefaultTimeout
+	if got := (&Config{}).Timeout(); got <= agentTimeout {
+		t.Errorf("default gateway timeout = %s, want longer than the agent's %s", got, agentTimeout)
+	}
+}
+
+// A configured value is still honoured — the staggering is a default, not a
+// policy imposed on an operator who knows what they want.
+func TestAConfiguredTimeoutWins(t *testing.T) {
+	if got := (&Config{RequestTimeoutSec: 30}).Timeout(); got != 30*time.Second {
+		t.Errorf("timeout = %s, want the configured 30s", got)
 	}
 }

@@ -127,7 +127,7 @@ func (r *Registry) buildBody(t HTTPTool, args map[string]any) (io.Reader, string
 			}
 		}
 	}
-	body := pruneBody(substitute(t.Body, subArgs))
+	body := pruneBody(substituteJSON(t.Body, subArgs))
 
 	if !t.wantsMultipart() || len(files) == 0 {
 		if strings.TrimSpace(body) == "" {

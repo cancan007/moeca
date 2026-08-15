@@ -305,6 +305,24 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, session string, 
 			req.URL.RawQuery = target.RawQuery
 			req.Host = target.Host
 
+			// Ask a model upstream for an uncompressed answer.
+			//
+			// The token budget is meant to be reconciled against the usage the
+			// provider reports, and that reconciliation reads the response. A
+			// gzipped body is unreadable here — the last bytes of a compressed
+			// stream cannot be decoded on their own — so every model call was
+			// silently falling back to the byte estimate, which is a fair proxy
+			// for prose and nonsense for anything else: one request carrying an
+			// image the agent had asked to look at was charged half a million
+			// tokens for what the provider billed as a couple of thousand.
+			//
+			// Only model services, and only the response: a few kilobytes of
+			// JSON uncompressed is a small price for accounting that means
+			// something.
+			if svc.Kind == "model" {
+				req.Header.Set("Accept-Encoding", "identity")
+			}
+
 			// scrub gateway/control + client-supplied sensitive headers
 			req.Header.Del(SessionHeader)
 			req.Header.Del(TargetHeader)
@@ -346,6 +364,14 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, session string, 
 			inTok, outTok = in, out
 			charge = int64(in + out)
 		}
+	}
+	// A response that is not text is not tokens. Downloading a generated video
+	// moved the ledger by half a million on the byte estimate alone, which
+	// exhausted a two-million budget in three artifacts — for bytes no model
+	// ever read. The budget counts what a model was asked to think about, so a
+	// payload it will never see costs the nominal minimum instead.
+	if !isTextual(rec.Header().Get("Content-Type")) && inTok+outTok == 0 {
+		charge = 1
 	}
 	// A request the provider REFUSED is not billed by the provider, so it must
 	// not be billed here either. Without this, the byte estimate stands in for

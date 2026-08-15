@@ -11,21 +11,21 @@ import (
 // accessLog is one structured request/response record. It feeds the app's Audit
 // view (A2A-style) and doubles as the request/response logging role.
 type accessLog struct {
-	Time       string `json:"time"`
-	RequestID  string `json:"requestId"`
-	Session    string `json:"session"`
-	Run        string `json:"run,omitempty"`   // ORCHESTRA run id (attribution)
-	Stage      string `json:"stage,omitempty"` // ORCHESTRA stage id (attribution)
-	Service    string `json:"service"`
-	Model      string `json:"model,omitempty"`
-	Method     string `json:"method"`
-	Path       string `json:"path"`
-	Upstream   string `json:"upstream,omitempty"`
-	Status     int    `json:"status"`
-	ReqBytes   int64  `json:"reqBytes"`
-	RespBytes  int64  `json:"respBytes"`
-	ReqBody    string `json:"reqBody,omitempty"`  // captured request content (capped)
-	RespBody   string `json:"respBody,omitempty"` // captured response content (capped)
+	Time         string `json:"time"`
+	RequestID    string `json:"requestId"`
+	Session      string `json:"session"`
+	Run          string `json:"run,omitempty"`   // ORCHESTRA run id (attribution)
+	Stage        string `json:"stage,omitempty"` // ORCHESTRA stage id (attribution)
+	Service      string `json:"service"`
+	Model        string `json:"model,omitempty"`
+	Method       string `json:"method"`
+	Path         string `json:"path"`
+	Upstream     string `json:"upstream,omitempty"`
+	Status       int    `json:"status"`
+	ReqBytes     int64  `json:"reqBytes"`
+	RespBytes    int64  `json:"respBytes"`
+	ReqBody      string `json:"reqBody,omitempty"`  // captured request content (capped)
+	RespBody     string `json:"respBody,omitempty"` // captured response content (capped)
 	DurationMs   int64  `json:"durationMs"`
 	TokensEst    int64  `json:"tokensEst,omitempty"`    // tokens charged to the budget (real usage or estimate)
 	InputTokens  int    `json:"inputTokens,omitempty"`  // real prompt tokens (model services)

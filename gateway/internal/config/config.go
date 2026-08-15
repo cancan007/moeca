@@ -220,9 +220,16 @@ type Budget struct {
 }
 
 // Timeout returns the per-request timeout as a duration.
+// Timeout bounds one proxied request.
+//
+// The default deliberately outlasts the agent's own model-call timeout (300s in
+// agent/internal/llm). When the two are equal a timed-out call could have come
+// from either side, and the log says only "deadline exceeded" — so the pair is
+// staggered, and whichever gives up first is known before anyone reads a log.
+// The agent is the one that should give up: it is the party that can retry.
 func (c *Config) Timeout() time.Duration {
 	if c.RequestTimeoutSec <= 0 {
-		return 300 * time.Second
+		return 360 * time.Second
 	}
 	return time.Duration(c.RequestTimeoutSec) * time.Second
 }

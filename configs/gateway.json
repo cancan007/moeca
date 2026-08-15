@@ -1,7 +1,7 @@
 {
   "listen": "0.0.0.0:8787",
   "maxBodyBytes": 8388608,
-  "requestTimeoutSec": 300,
+  "requestTimeoutSec": 360,
   "sessions": {
     "dev-session-token": {
       "id": "dev",
