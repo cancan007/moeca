@@ -209,6 +209,25 @@ than writing the plan file left every stage exiting 0 and the worktree empty —
 was discarded, and the convention that would have caught it existed only inside a translated
 string. See [`agent/internal/handoff`](agent/internal/handoff/).
 
+An agent can also **look at** what a run produced: `view_image` puts an image from
+`/work` into the conversation as an image, encoded for whichever dialect the stage is
+bound to (Anthropic `image`, OpenAI `image_url` data URI, Gemini `inlineData`). Until
+this existed an agent could only be *told* a file was there — an integrator whose job
+was to check a generated picture signed off on a filename. It is a separate tool from
+`read_file` on purpose: an image stays in the context for every later turn, so looking
+should be a decision. No dialect takes a video, so `view_video` samples still frames instead, spread across
+its length — several moments being a better check than one anyway. The extraction runs
+in the **media image**, not the agent's: ffmpeg stays confined to the one image built to
+hold it, and the agent asks for frames over the same file-based channel delegation uses,
+opening no path to the host.
+
+A tool can also **start from a file the run already has**: a parameter may be declared as
+a path into `/work`, sent either as a multipart form part or as base64 inside the JSON
+body — the two shapes real providers use. That is what makes an edit route (img2img, a
+video from a reference frame) a tool definition rather than a patch, and it is why the
+shipped `edit_image` preset needs no code of its own. The path is guarded like every
+other file argument, because a parameter naming a file is still a path an agent chose.
+
 It can also be granted **artifact tools** — the mechanism image, speech and video
 generation are built on. An ordinary gateway-routed HTTP tool answers the model with its
 response body; an artifact tool declares where the bytes are (`output.kind` = `binary`, or

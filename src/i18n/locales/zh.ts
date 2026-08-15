@@ -210,6 +210,8 @@ export const zh: Dict = {
     },
 
     tools: {
+      fileInputTip: "将该参数视为 /work 中的文件路径，并按所选形式发送该文件。",
+      fileInput: { none: "值", multipart: "文件（multipart）", base64: "文件（base64）" },
       fieldDefaults: "默认值（模型省略该参数时使用；不支持 {{tpl}}，每行一条）",
       fieldOutput: "响应的处理方式",
       output: {
@@ -735,6 +737,11 @@ export const zh: Dict = {
 
   tools: {
     media: {
+      edit: {
+        description: "以 /work 中已有的图像为基础，按指示改写并写出新图像。",
+        image: "作为基础的图像路径（相对 /work）。",
+        prompt: "希望如何修改。",
+      },
       image: {
         description: "根据提示生成图像，并作为文件写入 /work。",
         prompt: "希望生成的图像内容。这是图像模型收到的唯一指令。",
@@ -907,7 +914,7 @@ export const zh: Dict = {
     worker:
       "请只实现上游阶段交付给你的职责范围。产出必须用 write_file 或生成工具写入 /work 成为文件 — 仅用文字作答不算产出。",
     integrate:
-      "请整合各 worker 的产出，消解其中的矛盾，汇总为最终成果。并将整合结果写入 /work 的文件。",
+      "请整合各 worker 的产出，消解其中的矛盾，汇总为最终成果。并将整合结果写入 /work 的文件。对于图像产出请使用 view_image、视频产出请使用 view_video（抽取静止帧）实际查看后再判断是否符合要求，而不是仅凭文件名下结论。",
     router:
       "可用的模板：\n{{list}}\n\n请选出最适合该任务的 1 个模板，并用 write_file 将**仅该模板的 ID** 写入 `.orchestra/route`（不要写入其他内容）。写完后即可结束。",
   },

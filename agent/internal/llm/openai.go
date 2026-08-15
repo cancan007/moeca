@@ -28,11 +28,25 @@ type oaToolCall struct {
 	Function oaFunctionCall `json:"function"`
 }
 
+// oaMessage's Content is `any` because this dialect has two shapes for it: a
+// plain string, and an array of parts once an image is involved. Sending the
+// array form unconditionally would change every request for the sake of the
+// rare one that carries a picture.
 type oaMessage struct {
 	Role       string       `json:"role"`
-	Content    string       `json:"content,omitempty"`
+	Content    any          `json:"content,omitempty"`
 	ToolCalls  []oaToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string       `json:"tool_call_id,omitempty"`
+}
+
+// oaImagePart is this dialect's image: a data: URI rather than a base64 field.
+type oaImagePart struct {
+	Type     string            `json:"type"`
+	ImageURL map[string]string `json:"image_url"`
+}
+
+func oaImage(mediaType, data string) oaImagePart {
+	return oaImagePart{Type: "image_url", ImageURL: map[string]string{"url": "data:" + mediaType + ";base64," + data}}
 }
 
 type oaTool struct {
@@ -118,15 +132,28 @@ func (c *openAIClient) encode(req Request) oaRequest {
 			msgs = append(msgs, oaMessage{Role: "assistant", Content: blocksText(m.Content), ToolCalls: calls})
 		default: // user
 			var text []string
+			var images []any
 			for _, b := range m.Content {
 				switch b.Type {
 				case BlockText:
 					text = append(text, b.Text)
 				case BlockToolResult:
+					// A tool message cannot carry an image in this dialect, so
+					// images travel in the user message below instead.
 					msgs = append(msgs, oaMessage{Role: "tool", ToolCallID: b.ToolUseID, Content: b.Content})
+				case BlockImage:
+					images = append(images, oaImage(b.MediaType, b.Data))
 				}
 			}
-			if len(text) > 0 {
+			switch {
+			case len(images) > 0:
+				parts := make([]any, 0, len(images)+1)
+				if len(text) > 0 {
+					parts = append(parts, map[string]string{"type": "text", "text": strings.Join(text, "\n")})
+				}
+				parts = append(parts, images...)
+				msgs = append(msgs, oaMessage{Role: "user", Content: parts})
+			case len(text) > 0:
 				msgs = append(msgs, oaMessage{Role: "user", Content: strings.Join(text, "\n")})
 			}
 		}

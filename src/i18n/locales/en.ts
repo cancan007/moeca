@@ -210,6 +210,8 @@ export const en: Dict = {
     },
 
     tools: {
+      fileInputTip: "Treat this parameter as a path to a file in /work and send that file, in the shape the provider wants.",
+      fileInput: { none: "value", multipart: "file (multipart)", base64: "file (base64)" },
       fieldDefaults: "Defaults (used when the model omits a parameter; not {{tpl}}, one per line)",
       fieldOutput: "What the response becomes",
       output: {
@@ -735,6 +737,11 @@ export const en: Dict = {
 
   tools: {
     media: {
+      edit: {
+        description: "Start from an image already in /work and write a new one, changed as instructed.",
+        image: "Path of the image to start from, relative to /work.",
+        prompt: "What to change about it.",
+      },
       image: {
         description: "Generate an image from a prompt and write it into /work as a file.",
         prompt: "What the image should show. This is the only instruction the image model gets.",
@@ -910,7 +917,7 @@ export const en: Dict = {
     worker:
       "Implement only the scope handed to you by the upstream stages. Your output must land on disk in /work via write_file or a generation tool — answering in prose produces nothing.",
     integrate:
-      "Integrate the workers' output, resolve any contradictions, and produce the final result. Write the integrated result to a file in /work.",
+      "Integrate the workers' output, resolve any contradictions, and produce the final result. Write the integrated result to a file in /work. Use view_image to actually look at any image produced — and view_video, which samples still frames, for any video — and judge whether it is what was asked for, rather than signing off on a filename.",
     router:
       "Available templates:\n{{list}}\n\nPick the one template that best fits the task and use write_file to write **only that template's id** to `.orchestra/route` (nothing else). Stop once you have written it.",
   },

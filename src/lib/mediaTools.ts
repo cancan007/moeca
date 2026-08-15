@@ -23,6 +23,11 @@ export const MEDIA_TOOL_IDS = {
   video: "gen-video",
 } as const;
 
+/** The edit preset is not one of the three grants: it starts from a picture the
+ *  run already has rather than from nothing, so it is an ordinary tool an agent
+ *  is given, and it has no counterpart in the old media grant. */
+export const EDIT_IMAGE_TOOL_ID = "edit-image";
+
 export const MEDIA_EXTENSIONS = {
   image: [".png", ".jpg", ".jpeg", ".webp"],
   speech: [".mp3", ".wav", ".opus", ".flac"],
@@ -34,6 +39,8 @@ type Kind = keyof typeof MEDIA_TOOL_IDS;
 /** The default generation route. Every shipped model below is OpenAI's, so a
  *  preset that pointed anywhere else would ship broken. */
 const DEFAULT_PREFIX = "/openai/";
+
+const EDIT_PATH = "/v1/images/edits";
 
 /** The request path each kind uses after the provider prefix. */
 const DEFAULT_PATH: Record<Kind, string> = {
@@ -109,6 +116,25 @@ export function mediaToolPresets(prefix = DEFAULT_PREFIX): ToolDef[] {
           statusUrl: "/{{id}}", resultUrl: "/{{id}}/content",
         },
       },
+    },
+    {
+      id: EDIT_IMAGE_TOOL_ID,
+      name: "edit_image",
+      description: i18n.t("tools.media.edit.description"),
+      params: [
+        { name: "image", type: "string", description: i18n.t("tools.media.edit.image"), required: true },
+        { name: "prompt", type: "string", description: i18n.t("tools.media.edit.prompt"), required: true },
+        { name: "size", type: "string", description: i18n.t("tools.media.image.size"), required: false },
+      ],
+      method: "POST",
+      path: prefix.replace(/\/$/, "") + EDIT_PATH,
+      headers: {},
+      // The same body template as generation; it becomes the form fields once a
+      // file is attached, so the tool reads the same either way.
+      body: `{"model":"${DEFAULT_MODEL.image}","prompt":"{{prompt}}","size":"{{size}}"}`,
+      targetHeader: "",
+      inputs: { image: { as: "multipart", field: "image" } },
+      output: { kind: "base64", jsonPath: "data.0.b64_json", extensions: [...MEDIA_EXTENSIONS.image] },
     },
   ];
 }

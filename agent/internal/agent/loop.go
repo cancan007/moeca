@@ -180,6 +180,9 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 			// Echo the full assistant content back verbatim (thinking + tool_use).
 			messages = append(messages, llm.Message{Role: "assistant", Content: resp.Content})
 			results := r.executeTools(resp.Content)
+			// Images a tool read go in the same user turn, after the results:
+			// a tool result is a string, so an image cannot travel inside one.
+			results = append(results, r.cfg.Tools.TakeAttachments()...)
 			messages = append(messages, llm.Message{Role: "user", Content: results})
 		case "pause_turn":
 			// A server tool (web search) hit the provider's per-turn iteration

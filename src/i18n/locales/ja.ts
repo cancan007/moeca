@@ -213,6 +213,8 @@ export const ja = {
     },
 
     tools: {
+      fileInputTip: "このパラメータを値ではなく /work のファイルパスとして扱い、指定の形式で送ります。",
+      fileInput: { none: "値", multipart: "ファイル(multipart)", base64: "ファイル(base64)" },
       fieldDefaults: "既定値（省略時に使う値。{{tpl}} 不可・1行1件）",
       fieldOutput: "応答の扱い",
       output: {
@@ -738,6 +740,11 @@ export const ja = {
 
   tools: {
     media: {
+      edit: {
+        description: "既存の画像を元に、指示に沿って描き直した画像を /work に書き出す。",
+        image: "元にする画像のパス（/work からの相対）。",
+        prompt: "どう変えるかの指示。",
+      },
       image: {
         description: "指示から画像を生成し、/work にファイルとして書き出す。",
         prompt: "生成したい画像の詳細な説明。画像モデルに渡る唯一の指示。",
@@ -914,7 +921,7 @@ export const ja = {
     worker:
       "上流ステージから引き渡された担当範囲のみを実装してください。成果物は必ず write_file か生成ツールでファイルとして /work に書き出すこと — 文章で答えただけでは成果物になりません。",
     integrate:
-      "各 worker の成果物を統合し、矛盾を解消して最終成果にまとめてください。統合結果はファイルとして /work に書き出してください。",
+      "各 worker の成果物を統合し、矛盾を解消して最終成果にまとめてください。統合結果はファイルとして /work に書き出してください。画像の成果物は view_image、動画は view_video（フレームを抜き出して見せます）で実際に確認してから合否を判断すること。",
     router:
       "利用可能なテンプレート:\n{{list}}\n\nタスクに最適なテンプレートを1つ選び、write_file で `.orchestra/route` に**そのテンプレートIDだけ**を書き込んでください（他の内容は書かない）。書き終えたら終了してください。",
   },

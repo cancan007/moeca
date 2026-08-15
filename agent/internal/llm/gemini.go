@@ -34,6 +34,13 @@ type gemPart struct {
 	Text             string               `json:"text,omitempty"`
 	FunctionCall     *gemFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *gemFunctionResponse `json:"functionResponse,omitempty"`
+	InlineData       *gemInlineData       `json:"inlineData,omitempty"`
+}
+
+// gemInlineData is this dialect's image: mimeType + base64, inline.
+type gemInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
 }
 
 type gemContent struct {
@@ -95,6 +102,8 @@ func (c *geminiClient) encode(req Request) gemRequest {
 						Name:     idName[b.ToolUseID],
 						Response: map[string]any{"result": b.Content},
 					}})
+				case BlockImage:
+					parts = append(parts, gemPart{InlineData: &gemInlineData{MimeType: b.MediaType, Data: b.Data}})
 				}
 			}
 			contents = append(contents, gemContent{Role: "user", Parts: parts})

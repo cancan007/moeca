@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { migrateMediaGrants, mediaToolPresets, MEDIA_TOOL_IDS } from "./mediaTools";
+import { migrateMediaGrants, mediaToolPresets, MEDIA_TOOL_IDS, EDIT_IMAGE_TOOL_ID } from "./mediaTools";
 import type { SoloAgent } from "@/lib/templates";
 import type { ToolDef } from "@/lib/tools";
 
@@ -83,5 +83,39 @@ describe("shipped presets", () => {
     for (const t of mediaToolPresets()) {
       expect(t.output?.extensions?.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// Starting from a picture the run already has, rather than from nothing. The
+// providers differ on how the file travels, so the preset states it.
+describe("the image-edit preset", () => {
+  const edit = () => mediaToolPresets().find((t) => t.id === EDIT_IMAGE_TOOL_ID)!;
+
+  it("declares its image parameter as an uploaded file", () => {
+    expect(edit().inputs?.image).toMatchObject({ as: "multipart", field: "image" });
+  });
+
+  it("posts to the edit route, not the generation one", () => {
+    expect(edit().path).toContain("/v1/images/edits");
+  });
+
+  // The body doubles as the form fields once a file is attached, so an edit
+  // tool reads the same as a generation tool.
+  it("keeps the same body template as generation", () => {
+    expect(edit().body).toContain('"model"');
+    expect(edit().body).toContain("{{prompt}}");
+  });
+
+  it("still writes its result as an image artifact", () => {
+    expect(edit().output).toMatchObject({ kind: "base64", jsonPath: "data.0.b64_json" });
+  });
+
+  // It is a tool, not a fourth grant: the migration off media grants must not
+  // invent one for an agent that never had it.
+  it("is not produced by migrating a media grant", () => {
+    const solo = { id: "a", name: "a", role: "", providerId: "anthropic", model: "m", ctx: "", strat: "", dot: "", arch: "generic",
+      media: { image: { prefix: "/openai/", model: "gpt-image-1" } } } as SoloAgent;
+    const out = migrateMediaGrants([solo], [])!;
+    expect(out.solos[0].toolIds).not.toContain(EDIT_IMAGE_TOOL_ID);
   });
 });

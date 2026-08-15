@@ -147,6 +147,11 @@ type Block struct {
 	ToolUseID string
 	Content   string
 	IsError   bool
+	// image: base64 payload and its media type. Every dialect can take an image
+	// in a user turn, so this is the one shape that lets an agent LOOK at what
+	// a run produced instead of only being told a file exists.
+	MediaType string
+	Data      string
 
 	// Raw holds the original JSON for block types this package does not model.
 	Raw json.RawMessage
@@ -157,6 +162,7 @@ const (
 	BlockText       = "text"
 	BlockToolUse    = "tool_use"
 	BlockToolResult = "tool_result"
+	BlockImage      = "image"
 	// BlockServerToolUse is a provider-executed tool call (web search). The
 	// agent must NOT dispatch it — the provider already ran it and put the
 	// result in the same response — so it stays an unmodelled block that
@@ -183,6 +189,14 @@ func (b Block) ServerToolName() string {
 func TextBlock(text string) Block { return Block{Type: BlockText, Text: text} }
 
 // ToolResultBlock builds a tool_result content block.
+// ImageBlock carries an image for the model to look at. base64 is the only
+// encoding all three dialects accept without the agent needing egress of its
+// own — a URL would mean the provider fetching from somewhere, which a sandbox
+// has no way to offer.
+func ImageBlock(mediaType, base64Data string) Block {
+	return Block{Type: BlockImage, MediaType: mediaType, Data: base64Data}
+}
+
 func ToolResultBlock(toolUseID, content string, isError bool) Block {
 	return Block{Type: BlockToolResult, ToolUseID: toolUseID, Content: content, IsError: isError}
 }
@@ -258,6 +272,21 @@ func (b Block) MarshalJSON() ([]byte, error) {
 			Content   string `json:"content"`
 			IsError   bool   `json:"is_error,omitempty"`
 		}{b.Type, b.ToolUseID, b.Content, b.IsError})
+	case BlockImage:
+		// The Anthropic wire shape; the other dialects re-encode it in their
+		// own encoders (see openai.go / gemini.go).
+		return json.Marshal(struct {
+			Type   string `json:"type"`
+			Source struct {
+				Type      string `json:"type"`
+				MediaType string `json:"media_type"`
+				Data      string `json:"data"`
+			} `json:"source"`
+		}{Type: b.Type, Source: struct {
+			Type      string `json:"type"`
+			MediaType string `json:"media_type"`
+			Data      string `json:"data"`
+		}{"base64", b.MediaType, b.Data}})
 	default:
 		if len(b.Raw) > 0 {
 			return b.Raw, nil

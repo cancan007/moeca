@@ -52,6 +52,10 @@ type HTTPTool struct {
 	// it. A parameter with neither an argument nor a default is dropped from a
 	// JSON body rather than sent empty (see pruneBody).
 	Defaults map[string]string `json:"defaults"`
+	// Inputs declare which parameters name a file in /work rather than carrying
+	// a value, and how each is sent (a form part, or base64 inside the body).
+	// Absent => the tool sends no files, which is every tool that predates this.
+	Inputs map[string]ToolInput `json:"inputs"`
 	// Output decides what the response becomes. Absent (or "text") returns the
 	// body to the model, which is right for an API whose answer is information.
 	// An artifact output writes the bytes into /work instead — see ToolOutput.
@@ -143,6 +147,10 @@ type Registry struct {
 	// because delegation runs sub-agent tools concurrently with the parent's.
 	mu       sync.Mutex
 	produced []string
+	// attachments are images a tool call read for the model to look at. They
+	// wait here because a tool result is a string; the loop collects them and
+	// puts them in the same user turn as the results. See view.go.
+	attachments []attachment
 }
 
 // New returns a Registry rooted at workdir (typically /work).
@@ -287,6 +295,7 @@ func (r *Registry) Definitions() []llm.Tool {
 			},
 		},
 	}
+	defs = append(defs, viewImageDef(), viewVideoDef())
 	if r.delegate {
 		defs = append(defs, spawnSubagentDef())
 	}
@@ -354,6 +363,10 @@ func (r *Registry) dispatch(name string, args map[string]any) (string, bool) {
 		return r.listFiles(str(args, "subdir"))
 	case "read_file":
 		return r.readFile(str(args, "path"))
+	case "view_image":
+		return r.viewImage(str(args, "path"))
+	case "view_video":
+		return r.viewVideo(str(args, "path"), str(args, "frames"))
 	case "write_file":
 		return r.writeFile(str(args, "path"), str(args, "content"))
 	case "edit_file":
@@ -392,15 +405,17 @@ func (r *Registry) callHTTP(t HTTPTool, args map[string]any) (string, bool) {
 	if method == "" {
 		method = http.MethodPost
 	}
-	var body io.Reader
-	if t.Body != "" {
-		body = strings.NewReader(pruneBody(subst(t.Body)))
+	// Files a text tool sends travel the same way an artifact tool's do: this is
+	// how "upload it" is expressed, whatever the response then turns out to be.
+	body, contentType, err := r.buildBody(t, args)
+	if err != nil {
+		return err.Error(), true
 	}
 	req, err := http.NewRequest(method, r.gateway+subst(t.Path), body)
 	if err != nil {
 		return "bad tool request: " + err.Error(), true
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	r.gctx.Apply(req.Header)
 	if t.TargetHeader != "" {
 		req.Header.Set("X-Orchestra-Target", subst(t.TargetHeader))

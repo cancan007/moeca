@@ -654,9 +654,11 @@ func (s *Server) runStage(run *Run, stage Stage, worktree string, strict bool, o
 	run.stageByID[stage.ID].ContainerID = id
 	run.mu.Unlock()
 
-	// While the stage runs, fulfill any sub-agent delegation requests it writes
-	// into its worktree. The watcher stops when the stage container exits.
+	// While the stage runs, answer what it asks for through its worktree.
+	// Frame sampling is always available — looking at what you produced is not
+	// a privilege a template grants — while delegation stays opt-in.
 	done := make(chan struct{})
+	go s.watchFrames(stageWorktree, strict, done)
 	if run.delegation {
 		// Sub-agents inherit the parent stage's pinned image, so a delegation
 		// cannot become a way to run a different (or newer) image than the run
@@ -664,9 +666,7 @@ func (s *Server) runStage(run *Run, stage Stage, worktree string, strict bool, o
 		go s.watchDelegations(stageWorktree, run, stage, pinned, strict, done)
 	}
 	code, werr := s.docker.Wait(id)
-	if run.delegation {
-		close(done)
-	}
+	close(done)
 	// The stage is terminal (done, failed or stopped): archive its output before
 	// anything can remove the container, so the log outlives it either way.
 	s.archiveStageLog(run.ID, stage.ID, id)

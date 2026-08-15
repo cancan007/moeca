@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { sectionTitle } from "./ui";
 import { useStore } from "@/store/useStore";
-import type { ToolDef, ToolParam, ToolOutput } from "@/lib/tools";
+import type { ToolDef, ToolParam, ToolOutput, ToolInput } from "@/lib/tools";
 
 type OutKind = ToolOutput["kind"];
 
@@ -57,6 +57,17 @@ function ToolModal({ base, onClose }: { base: ToolDef | null; onClose: () => voi
   const [jsonPath, setJsonPath] = useState(base?.output?.jsonPath ?? "");
   const [exts, setExts] = useState((base?.output?.extensions ?? []).join(", "));
   const [defaults, setDefaults] = useState(headersToText(base?.defaults ?? {}));
+  // Which parameters name a file in /work. Kept beside the params rather than
+  // in a separate list, because "this parameter is a path" is a fact about the
+  // parameter.
+  const [inputs, setInputs] = useState<Record<string, ToolInput>>(base?.inputs ?? {});
+  const setInputMode = (name: string, as: "" | "multipart" | "base64") =>
+    setInputs((m) => {
+      const next = { ...m };
+      if (!as) delete next[name];
+      else next[name] = { ...next[name], as };
+      return next;
+    });
   const [poll, setPoll] = useState(!!base?.output?.poll);
   const [pollDone, setPollDone] = useState((base?.output?.poll?.done ?? ["completed"]).join(", "));
   const [pollFail, setPollFail] = useState((base?.output?.poll?.fail ?? ["failed", "cancelled"]).join(", "));
@@ -75,6 +86,14 @@ function ToolModal({ base, onClose }: { base: ToolDef | null; onClose: () => voi
       params: params.filter((p) => p.name.trim()),
       method, path: path.trim(), headers: textToHeaders(headers), body, targetHeader: target.trim(),
       ...(Object.keys(defs).length ? { defaults: defs } : {}),
+      // Only for parameters that still exist: renaming one must not leave a
+      // file declaration pointing at nothing.
+      ...(() => {
+        const kept = Object.fromEntries(
+          Object.entries(inputs).filter(([n]) => params.some((p) => p.name.trim() === n)),
+        );
+        return Object.keys(kept).length ? { inputs: kept } : {};
+      })(),
       // Absent for a text tool, so its stored shape is exactly what it was
       // before artifact outputs existed.
       ...(outKind === "text" ? {} : {
@@ -128,6 +147,19 @@ function ToolModal({ base, onClose }: { base: ToolDef | null; onClose: () => voi
                   {["string", "number", "boolean"].map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
                 <input value={p.description} onChange={(e) => setParam(i, { description: e.target.value })} placeholder={t("settings.tools.paramDescription")} style={input} />
+                {/* A parameter can name a file in /work instead of carrying a
+                    value. How it is sent differs by provider, so it is stated
+                    here rather than guessed. */}
+                <select
+                  value={inputs[p.name.trim()]?.as ?? ""}
+                  onChange={(e) => setInputMode(p.name.trim(), e.target.value as "" | "multipart" | "base64")}
+                  title={t("settings.tools.fileInputTip")}
+                  style={{ ...mono, colorScheme: "dark", cursor: "pointer" }}
+                >
+                  <option value="">{t("settings.tools.fileInput.none")}</option>
+                  <option value="multipart">{t("settings.tools.fileInput.multipart")}</option>
+                  <option value="base64">{t("settings.tools.fileInput.base64")}</option>
+                </select>
                 <label style={{ display: "flex", alignItems: "center", gap: 4, font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>
                   <input type="checkbox" checked={p.required} onChange={(e) => setParam(i, { required: e.target.checked })} />{t("common.required")}
                 </label>

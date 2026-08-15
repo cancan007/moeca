@@ -59,7 +59,11 @@ func (r *Registry) callArtifactTool(t HTTPTool, args map[string]any) (string, bo
 
 	subst := func(s string) string { return substitute(s, args) }
 	path := subst(t.Path)
-	raw, ct, err := r.artifactDo(methodOr(t.Method, http.MethodPost), path, pruneBody(subst(t.Body)), t)
+	body, contentType, err := r.buildBody(t, args)
+	if err != nil {
+		return err.Error(), true
+	}
+	raw, ct, err := r.artifactDo(methodOr(t.Method, http.MethodPost), path, body, contentType, t)
 	if err != nil {
 		return err.Error(), true
 	}
@@ -107,7 +111,7 @@ func (r *Registry) awaitJob(t HTTPTool, path string, created []byte) ([]byte, st
 			return nil, "", fmt.Errorf("%s: job %s did not finish within %s (last status %q)", t.Name, id, limit, status)
 		}
 		time.Sleep(every)
-		body, _, err := r.artifactDo(http.MethodGet, path+withID(pathOr(p.StatusURL, "/{{id}}"), id), "", t)
+		body, _, err := r.artifactDo(http.MethodGet, path+withID(pathOr(p.StatusURL, "/{{id}}"), id), nil, "", t)
 		if err != nil {
 			return nil, "", err
 		}
@@ -116,7 +120,7 @@ func (r *Registry) awaitJob(t HTTPTool, path string, created []byte) ([]byte, st
 			return nil, "", err
 		}
 	}
-	return r.artifactDo(http.MethodGet, path+withID(pathOr(p.ResultURL, "/{{id}}/content"), id), "", t)
+	return r.artifactDo(http.MethodGet, path+withID(pathOr(p.ResultURL, "/{{id}}/content"), id), nil, "", t)
 }
 
 // jobState reads the id and status out of a job envelope.
@@ -218,22 +222,24 @@ func (r *Registry) artifactDest(rel string, exts []string) (string, error) {
 	return r.resolve(rel)
 }
 
-func (r *Registry) artifactDo(method, path, body string, t HTTPTool) ([]byte, string, error) {
+func (r *Registry) artifactDo(method, path string, body io.Reader, contentType string, t HTTPTool) ([]byte, string, error) {
 	if r.gateway == "" {
 		return nil, "", fmt.Errorf("http tools are not configured")
 	}
 	if r.artifactHTTP == nil {
 		r.artifactHTTP = &http.Client{Timeout: artifactCallTimeout}
 	}
-	var rdr io.Reader
-	if body != "" && method != http.MethodGet {
-		rdr = strings.NewReader(body)
+	if method == http.MethodGet {
+		body = nil
 	}
-	req, err := http.NewRequest(method, r.gateway+path, rdr)
+	req, err := http.NewRequest(method, r.gateway+path, body)
 	if err != nil {
 		return nil, "", fmt.Errorf("bad tool request: %v", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	req.Header.Set("Content-Type", contentType)
 	r.gctx.Apply(req.Header)
 	if t.TargetHeader != "" {
 		req.Header.Set("X-Orchestra-Target", t.TargetHeader)

@@ -54,6 +54,21 @@ export interface ToolPoll {
   forSec?: number;
 }
 
+/** A parameter that names a file in /work rather than carrying a value, and how
+ *  that file is sent.
+ *
+ *  Providers genuinely differ here: OpenAI's edit routes take a form part,
+ *  Imagen takes base64 inside the JSON body. Declaring it per parameter is what
+ *  makes "edit this image" a tool definition instead of a patch — the same
+ *  reasoning as the response binding. */
+export interface ToolInput {
+  as: "multipart" | "base64";
+  /** Multipart form field name. Omit to use the parameter's own name. */
+  field?: string;
+  /** Cap for this upload in bytes. Omit for the default (32 MB). */
+  maxBytes?: number;
+}
+
 export interface ToolDef {
   id: string;
   name: string;
@@ -68,6 +83,9 @@ export interface ToolDef {
   targetHeader: string;
   /** Values for optional params the model leaves out. Its own argument wins. */
   defaults?: Record<string, string>;
+  /** Which parameters name files, keyed by parameter name. Absent => the tool
+   *  sends no files, which is every tool that predates this. */
+  inputs?: Record<string, ToolInput>;
   /** Absent => a text tool, the historical behaviour. */
   output?: ToolOutput;
 }
@@ -102,6 +120,7 @@ export interface CompiledTool {
   body: string;
   targetHeader: string;
   defaults?: Record<string, string>;
+  inputs?: Record<string, ToolInput>;
   output?: ToolOutput;
 }
 
@@ -143,6 +162,7 @@ export function compileTool(t: ToolDef): CompiledTool {
     // Only carried when set: a text tool's wire shape is unchanged, so an
     // agent built before artifact outputs existed still sees what it saw.
     ...(t.defaults && Object.keys(t.defaults).length ? { defaults: t.defaults } : {}),
+    ...(t.inputs && Object.keys(t.inputs).length ? { inputs: t.inputs } : {}),
     ...(producesArtifact(t) ? { output: t.output } : {}),
   };
 }
