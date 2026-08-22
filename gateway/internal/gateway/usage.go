@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,21 +16,24 @@ import (
 //	OpenAI:    usage.prompt_tokens / usage.completion_tokens
 //	Gemini:    usageMetadata.promptTokenCount / usageMetadata.candidatesTokenCount
 
-type usageKeys struct{ in, out string }
+// usageKeys names a dialect's usage fields. total is the reported sum where the
+// provider publishes one; it is what lets a response with no output side be
+// charged exactly rather than guessed at.
+type usageKeys struct{ in, out, total string }
 
 // dialectKeys maps a routed service name to its usage field names. Names line up
 // with the llm.Kind* constants and the default gateway config service keys.
 var dialectKeys = map[string]usageKeys{
-	"anthropic": {"input_tokens", "output_tokens"},
-	"openai":    {"prompt_tokens", "completion_tokens"},
-	"gemini":    {"promptTokenCount", "candidatesTokenCount"},
+	"anthropic": {"input_tokens", "output_tokens", ""},
+	"openai":    {"prompt_tokens", "completion_tokens", "total_tokens"},
+	"gemini":    {"promptTokenCount", "candidatesTokenCount", "totalTokenCount"},
 }
 
 // allDialects is the fallback probe order for custom-named providers.
 var allDialects = []usageKeys{
-	{"input_tokens", "output_tokens"},
-	{"prompt_tokens", "completion_tokens"},
-	{"promptTokenCount", "candidatesTokenCount"},
+	{"input_tokens", "output_tokens", ""},
+	{"prompt_tokens", "completion_tokens", "total_tokens"},
+	{"promptTokenCount", "candidatesTokenCount", "totalTokenCount"},
 }
 
 var intFieldRe = map[string]*regexp.Regexp{}
@@ -59,25 +63,55 @@ func lastInt(body []byte, key string) (int, bool) {
 
 // extractUsage parses input/output token counts from a model response tail,
 // selecting the parser by the routed service name and falling back to probing
-// every known dialect for custom-named providers. ok is true only when BOTH
-// counts are present, so a partial parse falls back to the byte estimate rather
-// than undercounting.
-func extractUsage(tail []byte, name string) (in, out int, ok bool) {
+// every known dialect for custom-named providers.
+//
+// streamed says the response was an event stream. It matters because the tail
+// is the LAST few kilobytes: in a stream the two counts arrive in different
+// frames, so a missing one may simply have scrolled out of view, and charging
+// the half that is visible would undercount. In a single JSON body there is no
+// such doubt — the usage object is whole, so a field that is not there is a
+// field the provider does not have.
+//
+// That distinction is the whole fix. Requiring both counts unconditionally
+// meant an embeddings response — which reports a prompt count and no completion
+// count, because nothing was completed — fell back to the byte estimate. That
+// estimate then read a megabyte of returned vectors as if it were prose the
+// model had produced, and charged half a million tokens for ten thousand.
+func extractUsage(tail []byte, name string, streamed bool) (in, out int, ok bool) {
 	if k, known := dialectKeys[name]; known {
-		return usageFor(tail, k)
+		return usageFor(tail, k, streamed)
 	}
 	for _, k := range allDialects {
-		if i, o, found := usageFor(tail, k); found {
+		if i, o, found := usageFor(tail, k, streamed); found {
 			return i, o, true
 		}
 	}
 	return 0, 0, false
 }
 
-func usageFor(tail []byte, k usageKeys) (int, int, bool) {
+func usageFor(tail []byte, k usageKeys, streamed bool) (int, int, bool) {
 	in, okIn := lastInt(tail, k.in)
 	out, okOut := lastInt(tail, k.out)
 	if okIn && okOut {
+		return in, out, true
+	}
+	// A reported total settles it without guessing: whatever is not input is
+	// output, and for a response with no output side that difference is zero.
+	if k.total != "" {
+		if total, okTotal := lastInt(tail, k.total); okTotal {
+			if okIn {
+				if rest := total - in; rest > 0 {
+					return in, rest, true
+				}
+				return in, 0, true
+			}
+			return total, 0, true
+		}
+	}
+	if streamed {
+		return 0, 0, false // the missing half may just be out of the window
+	}
+	if okIn || okOut {
 		return in, out, true
 	}
 	return 0, 0, false
@@ -105,5 +139,24 @@ func isTextual(contentType string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// isStream reports whether a response arrived as an event stream, where the
+// usage fields are spread across frames and the tail may hold only some of them.
+func isStream(contentType string) bool {
+	return strings.Contains(strings.ToLower(contentType), "event-stream")
+}
+
+// byteSize renders a byte count the way an operator reading an error would
+// rather see it than as a bare integer.
+func byteSize(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.0f MiB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KiB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
 	}
 }

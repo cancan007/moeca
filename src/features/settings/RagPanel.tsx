@@ -237,7 +237,7 @@ export function RagPanel() {
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: online ? "#3fbf8f" : "var(--tx-faint)" }} />
           <span style={{ font: "600 13px 'IBM Plex Sans'", color: "var(--tx)" }}>{t("settings.rag.indexTitle")}</span>
           <span style={{ font: "400 10.5px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>
-            {status ? `${status.chunks} chunks · ${status.sources.length} files` : "…"}{status?.building ? ` · ${t("settings.rag.building")}` : ""}
+            {status ? `${status.chunks} chunks · ${status.sources.length} files` : "…"}{status?.building ? ` · ${t("settings.rag.building")}` : ""}{!status?.building && status?.reused ? ` · ${t("settings.rag.reusedCount", { reused: status.reused, embedded: status.embedded ?? 0 })}` : ""}
           </span>
           <div style={{ flex: 1 }} />
           {status?.builtAt && <span style={{ font: "400 9px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.rag.updatedAt")} {status.builtAt.replace("T", " ").replace("Z", "")}</span>}

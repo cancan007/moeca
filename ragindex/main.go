@@ -28,6 +28,8 @@ type fileConfig struct {
 	EmbedModel    string             `json:"embedModel"`
 	// EmbedMode: "gateway" (default) or "offline" — see internal/index/offline.go.
 	EmbedMode string `json:"embedMode"`
+	// CacheDir keeps embedded vectors across restarts. Empty = memory only.
+	CacheDir string `json:"cacheDir"`
 }
 
 func main() {
@@ -43,6 +45,7 @@ func main() {
 	cfg.EmbedPrefix = envOr("ORCHESTRA_EMBED_PREFIX", cfg.EmbedPrefix)
 	cfg.EmbedModel = envOr("ORCHESTRA_EMBED_MODEL", cfg.EmbedModel)
 	cfg.EmbedMode = envOr("ORCHESTRA_EMBED_MODE", cfg.EmbedMode)
+	cfg.CacheDir = envOr("ORCHESTRA_RAG_CACHE", cfg.CacheDir)
 	if cfg.EmbedMode == index.EmbedModeOffline {
 		// Loud on purpose. These vectors are a local approximation, and an
 		// operator who reaches this line by accident needs to see it before
@@ -58,7 +61,13 @@ func main() {
 		EmbedPrefix: cfg.EmbedPrefix,
 		EmbedModel:  cfg.EmbedModel,
 		EmbedMode:   cfg.EmbedMode,
+		CacheDir:    cfg.CacheDir,
 	})
+
+	// Vectors survive a restart; the index does not. Loading them before the
+	// first build is what makes that build read the sources and pay for nothing
+	// it has already embedded.
+	idx.LoadCache()
 
 	// Best-effort initial build, retried with backoff.
 	//

@@ -119,3 +119,21 @@ describe("the image-edit preset", () => {
     expect(out.solos[0].toolIds).not.toContain(EDIT_IMAGE_TOOL_ID);
   });
 });
+
+// A queue is not a failure. The generic 15-minute poll window gave up on a
+// video job that had not started rendering, and the run reported failure for
+// work that was still pending.
+describe("the video preset's patience", () => {
+  it("waits far longer than the generic default", () => {
+    const video = mediaToolPresets().find((t) => t.id === MEDIA_TOOL_IDS.video)!;
+    expect(video.output?.poll?.forSec ?? 0).toBeGreaterThanOrEqual(30 * 60);
+  });
+
+  // Image and speech return in seconds; only video queues.
+  it("is the only preset that needs it", () => {
+    for (const t of mediaToolPresets()) {
+      if (t.id === MEDIA_TOOL_IDS.video) continue;
+      expect(t.output?.poll).toBeUndefined();
+    }
+  });
+});

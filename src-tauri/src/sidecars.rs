@@ -256,6 +256,19 @@ fn docker(args: &[&str]) -> bool {
     }
 }
 
+/// Where the RAG indexer keeps its embedded vectors between runs. Created here
+/// rather than in the container so the mount has something to bind to, and kept
+/// under the app support dir with the rest of the derived state.
+fn vector_cache_dir() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
+    let dir = PathBuf::from(home).join("Library/Application Support/orchestra/rag-cache");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[rag] could not create the vector cache dir {}: {e}", dir.display());
+        return None;
+    }
+    Some(dir)
+}
+
 /// Ensures a docker network exists (idempotent; errors ignored if it already does).
 fn ensure_network(name: &str, internal: bool) {
     // `network inspect` succeeds only if it already exists.
@@ -375,6 +388,17 @@ pub fn start_rag_container(config_dir: &Option<PathBuf>) {
             args.push("--env".into());
             args.push(format!("ORCHESTRA_EMBED_MODE={mode}"));
         }
+    }
+
+    // A writable volume for the embedded vectors, so a restart does not pay the
+    // provider again for text that has not changed. It is the only writable
+    // path this container has: knowledge stays read-only, and what is kept here
+    // is derived data the indexer can always rebuild without it.
+    if let Some(dir) = vector_cache_dir() {
+        args.push("--env".into());
+        args.push("ORCHESTRA_RAG_CACHE=/cache".into());
+        args.push("-v".into());
+        args.push(format!("{}:/cache", dir.to_string_lossy()));
     }
 
     // Read-only knowledge mounts — the only thing here that touches host-local

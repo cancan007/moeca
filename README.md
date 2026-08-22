@@ -215,7 +215,13 @@ bound to (Anthropic `image`, OpenAI `image_url` data URI, Gemini `inlineData`). 
 this existed an agent could only be *told* a file was there — an integrator whose job
 was to check a generated picture signed off on a filename. It is a separate tool from
 `read_file` on purpose: an image stays in the context for every later turn, so looking
-should be a decision. No dialect takes a video, so `view_video` samples still frames instead, spread across
+should be a decision. The copy of an image that travels to the model is re-encoded first — a generated PNG is
+megabytes, and a handful of them put a request past the gateway's body limit and killed a
+run mid-way. The artifact on disk is left exactly as produced; only the copy in the
+conversation is shrunk, because lossless is the right choice for a file being kept and the
+wrong one for a picture being shown to a model that downscales it anyway.
+
+No dialect takes a video, so `view_video` samples still frames instead, spread across
 its length — several moments being a better check than one anyway. The extraction runs
 in the **media image**, not the agent's: ffmpeg stays confined to the one image built to
 hold it, and the agent asks for frames over the same file-based channel delegation uses,
@@ -227,6 +233,19 @@ body — the two shapes real providers use. That is what makes an edit route (im
 video from a reference frame) a tool definition rather than a patch, and it is why the
 shipped `edit_image` preset needs no code of its own. The path is guarded like every
 other file argument, because a parameter naming a file is still a path an agent chose.
+
+A provider-side call can also straddle a turn — the call arrives in one response and its
+result at the top of the next — and a turn in that state may be answered with tool results
+and nothing else. So images a tool read wait for a turn where that is allowed rather than
+riding back beside the results, which is a request the provider refuses outright.
+
+Granting **web search** brings provider-side code execution with it — the current
+web-search tool filters its own results that way — and that execution lives in a container
+the conversation has to keep naming, or the provider refuses to continue a turn that has
+work outstanding. The agent carries that id forward. It is not a capability moeca hands
+out and not a hole in the sandbox: the container is the provider's, on the provider's
+machines, holding only what this conversation had already sent it and with no route back
+here.
 
 It can also be granted **artifact tools** — the mechanism image, speech and video
 generation are built on. An ordinary gateway-routed HTTP tool answers the model with its

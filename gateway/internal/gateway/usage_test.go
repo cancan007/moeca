@@ -12,26 +12,41 @@ import (
 
 func TestExtractUsage(t *testing.T) {
 	cases := []struct {
-		name    string
-		dialect string
-		body    string
-		in, out int
-		ok      bool
+		name     string
+		dialect  string
+		body     string
+		streamed bool
+		in, out  int
+		ok       bool
 	}{
-		{"anthropic", "anthropic", `{"content":[],"usage":{"input_tokens":100,"output_tokens":25}}`, 100, 25, true},
-		{"openai", "openai", `{"choices":[],"usage":{"prompt_tokens":40,"completion_tokens":60}}`, 40, 60, true},
-		{"gemini", "gemini", `{"candidates":[],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":3}}`, 7, 3, true},
+		{"anthropic", "anthropic", `{"content":[],"usage":{"input_tokens":100,"output_tokens":25}}`, false, 100, 25, true},
+		{"openai", "openai", `{"choices":[],"usage":{"prompt_tokens":40,"completion_tokens":60}}`, false, 40, 60, true},
+		{"gemini", "gemini", `{"candidates":[],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":3}}`, false, 7, 3, true},
 		// custom-named provider: fall back to probing all dialects
-		{"custom-openai", "my-azure", `{"usage":{"prompt_tokens":5,"completion_tokens":9}}`, 5, 9, true},
+		{"custom-openai", "my-azure", `{"usage":{"prompt_tokens":5,"completion_tokens":9}}`, false, 5, 9, true},
 		// streaming: last usage value wins (Anthropic message_delta after message_start)
-		{"stream-last-wins", "anthropic", `data: {"usage":{"input_tokens":10,"output_tokens":1}}` + "\n" + `data: {"usage":{"input_tokens":10,"output_tokens":42}}`, 10, 42, true},
-		// partial (only output) -> not ok, caller falls back to estimate
-		{"partial", "anthropic", `{"usage":{"output_tokens":25}}`, 0, 0, false},
-		{"none", "anthropic", `{"content":[]}`, 0, 0, false},
+		{"stream-last-wins", "anthropic", `data: {"usage":{"input_tokens":10,"output_tokens":1}}` + "\n" + `data: {"usage":{"input_tokens":10,"output_tokens":42}}`, true, 10, 42, true},
+
+		// An embeddings response reports what it consumed and no completion
+		// count, because nothing was completed. Requiring both counts sent this
+		// to the byte estimate, which then read a megabyte of returned vectors
+		// as if the model had written it.
+		{"embeddings", "openai", `{"data":[],"model":"text-embedding-3-small","usage":{"prompt_tokens":10232,"total_tokens":10232}}`, false, 10232, 0, true},
+		// A reported total settles the split without guessing.
+		{"total-only", "openai", `{"usage":{"total_tokens":90}}`, false, 90, 0, true},
+		{"total-minus-input", "openai", `{"usage":{"prompt_tokens":30,"total_tokens":100}}`, false, 30, 70, true},
+
+		// In a stream the counts arrive in different frames, so a missing one
+		// may simply have scrolled past the tail: charging the visible half
+		// would undercount, and the estimate is the safer answer.
+		{"streamed-partial", "anthropic", `data: {"usage":{"output_tokens":25}}`, true, 0, 0, false},
+		// In one whole JSON body there is no such doubt: absent means absent.
+		{"whole-body-partial", "anthropic", `{"usage":{"output_tokens":25}}`, false, 0, 25, true},
+		{"none", "anthropic", `{"content":[]}`, false, 0, 0, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			in, out, ok := extractUsage([]byte(c.body), c.dialect)
+			in, out, ok := extractUsage([]byte(c.body), c.dialect, c.streamed)
 			if ok != c.ok || (ok && (in != c.in || out != c.out)) {
 				t.Errorf("extractUsage(%s) = (%d,%d,%v), want (%d,%d,%v)", c.dialect, in, out, ok, c.in, c.out, c.ok)
 			}

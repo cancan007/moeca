@@ -113,3 +113,27 @@ func TestIsTextual(t *testing.T) {
 }
 
 var _ = config.Budget{}
+
+// An embeddings call is charged what it consumed, not the size of the vectors
+// it hands back. Requiring both counts sent it to the byte estimate — and
+// asking upstreams for uncompressed responses (so that usage could be read at
+// all) had quadrupled the very number that estimate was reading.
+func TestAnEmbeddingsCallIsChargedItsRealUsage(t *testing.T) {
+	// A response shaped like the real one: a megabyte of vectors, and a usage
+	// object with no completion side.
+	vectors := strings.Repeat(`-0.0123456,`, 90000)
+	gw, srv := modelGateway(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"embedding":[` + vectors + `0]}],` +
+			`"usage":{"prompt_tokens":10232,"total_tokens":10232}}`))
+	})
+	res := do(t, srv, "POST", "/echo/v1/embeddings", map[string]string{SessionHeader: "tok"}, strings.Repeat("x", 30000))
+	// Drained, not just closed: usage sits at the END of the body, so a client
+	// that hangs up early leaves the gateway nothing to read it from.
+	io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+
+	if spent := gw.budget.total("s1|echo"); spent != 10232 {
+		t.Errorf("charged %d, want the reported 10232 — the byte estimate would be ~250000", spent)
+	}
+}

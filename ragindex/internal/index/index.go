@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,8 +27,8 @@ import (
 
 // Chunk is one indexed passage with its source and embedding.
 type Chunk struct {
-	Source string    `json:"source"`
-	Text   string    `json:"text"`
+	Source string `json:"source"`
+	Text   string `json:"text"`
 	vec    []float32
 	// groups is the permission label set inherited from the chunk's source.
 	// Every chunk of a source shares one slice rather than copying it, so
@@ -52,6 +53,9 @@ type Config struct {
 	// EmbedMode selects where vectors come from: the gateway (default) or a
 	// local, keyless approximation for demos and tests. See offline.go.
 	EmbedMode string
+	// CacheDir is a writable directory where embedded vectors are kept across
+	// restarts. Empty keeps them in memory only. See veccache.go.
+	CacheDir string
 }
 
 // Source kinds and scopes.
@@ -100,6 +104,17 @@ type Index struct {
 	building bool
 	lastErr  string
 	builtAt  time.Time
+	// vecCache holds the vector for a chunk's text, so a rebuild pays only for
+	// what actually changed. See reuseVectors.
+	vecCache map[string][]float32
+	// embedHook counts texts sent for embedding. Tests only: how much a rebuild
+	// re-embeds is the behaviour under test, and it is invisible from outside.
+	embedHook func(n int)
+	// Counts from the last build, for /status: how much was re-embedded and how
+	// much was reused. Without them "the reindex was fast" is a feeling rather
+	// than a fact.
+	lastEmbedded int
+	lastReused   int
 }
 
 // Source is a per-source summary for the UI. Kind/Scope let the UI group and
@@ -175,28 +190,105 @@ func (i *Index) Build(ctx context.Context) error {
 		return nil
 	}
 
-	// Embed in batches.
-	texts := make([]string, len(chunks))
-	for k, c := range chunks {
-		texts[k] = c.Text
-	}
+	// Only what changed is embedded; everything else keeps the vector it
+	// already had. See reuseVectors for why the boundary is here.
+	pending, dupes, next := i.reuseVectors(chunks)
+
 	const batch = 64
-	for start := 0; start < len(texts); start += batch {
+	for start := 0; start < len(pending); start += batch {
 		end := start + batch
-		if end > len(texts) {
-			end = len(texts)
+		if end > len(pending) {
+			end = len(pending)
 		}
-		vecs, err := i.embed(ctx, texts[start:end])
+		texts := make([]string, 0, end-start)
+		for _, idx := range pending[start:end] {
+			texts = append(texts, chunks[idx].Text)
+		}
+		vecs, err := i.embed(ctx, texts)
 		if err != nil {
 			i.setErr(err)
 			return err
 		}
-		for k := range vecs {
-			chunks[start+k].vec = vecs[k]
+		for k, idx := range pending[start:end] {
+			chunks[idx].vec = vecs[k]
+			next[textKey(chunks[idx].Text)] = vecs[k]
 		}
 	}
+
+	// Chunks that repeat a text being embedded in this same build: they waited
+	// for the vector rather than queueing a second identical call.
+	for _, d := range dupes {
+		chunks[d.idx].vec = next[d.key]
+	}
+
+	i.mu.Lock()
+	i.vecCache = next
+	i.lastEmbedded = len(pending)
+	i.lastReused = len(chunks) - len(pending)
+	i.mu.Unlock()
+
+	// Written after the vectors are complete and only when this build added
+	// something: rewriting an unchanged cache would burn the disk for nothing.
+	if len(pending) > 0 {
+		i.saveCache(next)
+	}
+
 	i.swap(chunks, sources, "")
 	return nil
+}
+
+// reuseVectors fills in the chunks whose text this index has already embedded,
+// and reports the indices of the ones it has not.
+//
+// A rebuild reads and re-chunks every source, which is cheap — the cost of an
+// index is the embedding calls, and those are what a changed file should be
+// paying for. Keying on the chunk's own text rather than on a file's timestamp
+// falls out of that: it needs no bookkeeping to go stale, it survives a file
+// being touched without being altered, and when a long document changes in one
+// paragraph only that paragraph is paid for again.
+//
+// The cache returned is the one for the build in progress, so anything that has
+// gone — a deleted file, an edited paragraph — is dropped rather than kept
+// forever. It lives in memory only: the indexer holds nothing durable, and a
+// restart rebuilds from the sources by design.
+func (i *Index) reuseVectors(chunks []Chunk) (pending []int, dupes []dupChunk, next map[string][]float32) {
+	i.mu.RLock()
+	cached := i.vecCache
+	i.mu.RUnlock()
+
+	next = make(map[string][]float32, len(chunks))
+	claimed := make(map[string]bool, len(chunks))
+	for idx := range chunks {
+		key := textKey(chunks[idx].Text)
+		if vec, ok := cached[key]; ok && len(vec) > 0 {
+			chunks[idx].vec = vec
+			next[key] = vec
+			continue
+		}
+		// Two chunks with identical text embed once. The second cannot read the
+		// vector yet — nothing has been embedded — so it is filled in after.
+		if claimed[key] {
+			dupes = append(dupes, dupChunk{idx: idx, key: key})
+			continue
+		}
+		claimed[key] = true
+		pending = append(pending, idx)
+	}
+	return pending, dupes, next
+}
+
+// dupChunk is a chunk waiting on a vector another chunk in the same build is
+// already paying for.
+type dupChunk struct {
+	idx int
+	key string
+}
+
+// textKey identifies a chunk by its content. A hash rather than the text itself
+// so the cache costs 32 bytes a chunk to key, not the document twice over.
+func textKey(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return string(sum[:])
 }
 
 // effectiveSources returns the configured sources, falling back to a single
@@ -473,6 +565,11 @@ type Status struct {
 	// a model. Retrieval quality differs enormously between the two and nothing
 	// else on screen would reveal which one produced these vectors.
 	EmbedMode string `json:"embedMode,omitempty"`
+	// From the last build: how many chunks were embedded and how many kept the
+	// vector they already had. A rebuild that re-embedded nothing and one that
+	// re-embedded everything look identical from the outside otherwise.
+	Embedded int `json:"embedded"`
+	Reused   int `json:"reused"`
 }
 
 func (i *Index) Status() Status {
@@ -491,7 +588,8 @@ func (i *Index) Status() Status {
 	if mode == "" {
 		mode = EmbedModeGateway
 	}
-	return Status{Chunks: len(i.chunks), Sources: sources, Building: i.building, LastErr: i.lastErr, BuiltAt: built, EmbedMode: mode}
+	return Status{Chunks: len(i.chunks), Sources: sources, Building: i.building, LastErr: i.lastErr, BuiltAt: built, EmbedMode: mode,
+		Embedded: i.lastEmbedded, Reused: i.lastReused}
 }
 
 /* ── internals ── */
@@ -520,6 +618,9 @@ func (i *Index) setErr(err error) {
 // indexing and querying can never disagree about which space they are in —
 // mixing the two would score every query against noise.
 func (i *Index) embed(ctx context.Context, inputs []string) ([][]float32, error) {
+	if i.embedHook != nil {
+		i.embedHook(len(inputs))
+	}
 	if i.cfg.EmbedMode == EmbedModeOffline {
 		return offlineEmbed(inputs), nil
 	}

@@ -133,6 +133,10 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 	// lastInput carries the previous turn's real input-token count so compaction
 	// can trigger on measured context growth rather than a guess.
 	lastInput := 0
+	// The provider-side execution container, once a turn has created one. It
+	// persists for the rest of the conversation.
+	var container string
+
 	for i := 0; i < r.cfg.MaxIter; i++ {
 		if compacted, did := r.maybeCompact(ctx, messages, lastInput); did {
 			messages = compacted
@@ -150,6 +154,9 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 		if r.cfg.Effort != "" {
 			req.OutputConfig = &llm.OutputConfig{Effort: r.cfg.Effort}
 		}
+		// Name the provider's execution container again once a turn has used
+		// one, or it refuses to continue the conversation.
+		req.Container = container
 
 		resp, err := r.cfg.Provider.CreateMessage(ctx, req)
 		if err != nil {
@@ -157,6 +164,11 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 			return "error", "", fmt.Errorf("agent: iteration %d: %w", i, err)
 		}
 		lastInput = resp.Usage.InputTokens
+		// A turn that ran code on the provider's side leaves a container behind;
+		// the rest of the conversation has to keep naming it.
+		if id := resp.ContainerID(); id != "" {
+			container = id
+		}
 
 		toolCalls := collectToolNames(resp.Content)
 		r.log.event(logLine{
@@ -182,7 +194,17 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 			results := r.executeTools(resp.Content)
 			// Images a tool read go in the same user turn, after the results:
 			// a tool result is a string, so an image cannot travel inside one.
-			results = append(results, r.cfg.Tools.TakeAttachments()...)
+			//
+			// Unless the provider still has a server tool running. A turn with a
+			// call outstanding may be answered with tool results and nothing
+			// else, so the pictures wait — they stay queued and ride the next
+			// turn. Holding them costs a turn; sending them costs the run.
+			if llm.PendingServerToolUse(resp.Content) {
+				r.log.event(logLine{Type: "attachments_held", Iteration: i,
+					Message: "a provider-side tool is still running; images will follow on a later turn"})
+			} else {
+				results = append(results, r.cfg.Tools.TakeAttachments()...)
+			}
 			messages = append(messages, llm.Message{Role: "user", Content: results})
 		case "pause_turn":
 			// A server tool (web search) hit the provider's per-turn iteration

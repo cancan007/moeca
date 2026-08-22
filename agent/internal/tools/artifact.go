@@ -108,7 +108,12 @@ func (r *Registry) awaitJob(t HTTPTool, path string, created []byte) ([]byte, st
 			return nil, "", fmt.Errorf("%s: job %s reported %q: %s", t.Name, id, status, jobError(p, last))
 		}
 		if time.Now().After(deadline) {
-			return nil, "", fmt.Errorf("%s: job %s did not finish within %s (last status %q)", t.Name, id, limit, status)
+			// The job is not cancelled by giving up on it — it is still running
+			// on the provider's side and may well finish a minute later. Saying
+			// so keeps a run from reporting as failed something that was merely
+			// slow, and leaves the id to check.
+			return nil, "", fmt.Errorf("%s: job %s was still %q after %s, so this call gave up waiting. The job was not cancelled and may still finish; its output was not collected",
+				t.Name, id, status, limit)
 		}
 		time.Sleep(every)
 		body, _, err := r.artifactDo(http.MethodGet, path+withID(pathOr(p.StatusURL, "/{{id}}"), id), nil, "", t)

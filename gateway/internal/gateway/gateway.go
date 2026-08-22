@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -345,6 +346,18 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, session string, 
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			proxyErr = err.Error()
+			// A body over the cap surfaces here, because the limit is enforced
+			// while the proxy is already streaming the request upstream. Saying
+			// "upstream error" for it blames the provider for something this
+			// gateway did — and that is what a real run cost: a 10.9 MB request
+			// was reported as a provider failure, so the search went upstream
+			// and found nothing wrong there.
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				writeJSON(w, http.StatusRequestEntityTooLarge,
+					errBody(fmt.Sprintf("request body exceeds this gateway's %s limit", byteSize(g.cfg.MaxBodyBytes))))
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, errBody("upstream error"))
 		},
 	}
@@ -360,7 +373,7 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, session string, 
 	charge := estimateTokens(reqBytes, rec.bytes)
 	var inTok, outTok int
 	if rec.trackUsage {
-		if in, out, ok := extractUsage(rec.usageTail, name); ok {
+		if in, out, ok := extractUsage(rec.usageTail, name, isStream(rec.Header().Get("Content-Type"))); ok {
 			inTok, outTok = in, out
 			charge = int64(in + out)
 		}

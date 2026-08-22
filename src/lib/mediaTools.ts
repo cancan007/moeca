@@ -114,6 +114,10 @@ export function mediaToolPresets(prefix = DEFAULT_PREFIX): ToolDef[] {
           idPath: "id", statusPath: "status", errorPath: "error",
           done: ["completed"], fail: ["failed", "cancelled"],
           statusUrl: "/{{id}}", resultUrl: "/{{id}}/content",
+          // Video queues before it renders, and a queue is not a failure. The
+          // generic 15-minute default gave up on a job that had not started —
+          // the run reported failure while the work was still pending.
+          forSec: 45 * 60,
         },
       },
     },

@@ -3,5 +3,6 @@
   "knowledgeRoot": "/knowledge",
   "gateway": "http://orchestra-gateway:8787",
   "embedPrefix": "/openai",
-  "embedModel": "text-embedding-3-small"
+  "embedModel": "text-embedding-3-small",
+  "cacheDir": "/cache"
 }

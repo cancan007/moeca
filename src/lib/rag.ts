@@ -66,6 +66,11 @@ export interface RagStatus {
    *  without a model — usable for a demo, not for real retrieval. Older
    *  indexers omit it → gateway. */
   embedMode?: "gateway" | "offline";
+  /** From the last build: chunks re-embedded, and chunks that kept the vector
+   *  they already had. A rebuild that paid for everything and one that paid for
+   *  nothing are otherwise indistinguishable. Older indexers omit both. */
+  embedded?: number;
+  reused?: number;
 }
 
 export interface RagResult {

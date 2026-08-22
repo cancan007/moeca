@@ -143,7 +143,8 @@ func (r *Registry) viewVideo(rel, framesArg string) (string, bool) {
 			continue
 		}
 		r.mu.Lock()
-		r.attachments = append(r.attachments, attachment{Path: f, MediaType: "image/png", Data: b64(b)})
+		data, sentAs := forTransport(b, "image/png")
+		r.attachments = append(r.attachments, attachment{Path: f, MediaType: sentAs, Data: b64(data)})
 		r.mu.Unlock()
 		attached++
 	}

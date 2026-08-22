@@ -362,6 +362,7 @@ export const zh: Dict = {
     },
 
     rag: {
+      reusedCount: "上次重建：嵌入 {{embedded}} 个，复用 {{reused}} 个",
       desc: "由专用 RAG 容器将知识源做向量索引。知识源同时支持本地 read-only 挂载与外部 HTTPS 文档，并可按 项目内 / 组织整体 / 手动指定 的范围分别处理。代理只能通过 gateway 的 rag_search 进行检索，沙箱不会直接访问宿主机（外部抓取也在 RAG 容器内完成，不会打开 沙箱→宿主机 的网络面）。",
       indexerOffline:
         "无法连接 RAG 索引器（127.0.0.1:8790）。请确认是否已通过桌面应用启动，以及是否已用 `docker build -t orchestra/rag:latest ragindex/` 准备好镜像。",
@@ -759,7 +760,7 @@ export const zh: Dict = {
       },
     },
     ragSearch: {
-      description: "检索已登记的知识库，获取相关的文档分块。用于事实核对或查阅规格。",
+      description: "检索已登记的知识库，获取相关的文档分块。用于事实核对或查阅规格。结果附带的来源路径表示其在索引中的位置，并非 /work 中的文件——请勿尝试打开。",
       query: "检索查询（可用自然语言）",
     },
   },

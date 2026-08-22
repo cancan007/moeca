@@ -32,6 +32,15 @@ import (
 // the context for the rest of the run.
 const maxViewBytes = 6 << 20
 
+// maxTurnAttachBytes caps what ONE turn may attach, across every view call in
+// it. The per-file limit above is not enough on its own: three separately-legal
+// images went out as a single 10.9 MB request, past the gateway's 8 MiB body
+// cap, and the run died holding work it had already paid for.
+//
+// A model that wants to compare several pictures can still do it — one turn
+// each. Deferring is recoverable; a request that cannot be sent is not.
+const maxTurnAttachBytes = 4 << 20
+
 // viewableTypes maps an extension to the media type sent to the model. Only
 // formats every dialect accepts are listed: an unsupported one is better
 // refused here, with the reason, than turned into a provider error.
@@ -94,10 +103,12 @@ func (r *Registry) viewImage(rel string) (string, bool) {
 	if len(b) == 0 {
 		return fmt.Sprintf("%s is empty", rel), true
 	}
+	// The copy that travels is re-encoded; the artifact on disk is untouched.
+	data, sentAs := forTransport(b, mediaType)
 	r.mu.Lock()
-	r.attachments = append(r.attachments, attachment{Path: rel, MediaType: mediaType, Data: b64(b)})
+	r.attachments = append(r.attachments, attachment{Path: rel, MediaType: sentAs, Data: b64(data)})
 	r.mu.Unlock()
-	return fmt.Sprintf("attached %s (%s, %s) — the image itself follows this result", rel, mediaType, byteSize(info.Size())), false
+	return fmt.Sprintf("attached %s (%s, %s) — the image itself follows this result", rel, sentAs, byteSize(info.Size())), false
 }
 
 // TakeAttachments returns the images queued by this turn's tool calls and
@@ -110,8 +121,25 @@ func (r *Registry) TakeAttachments() []llm.Block {
 		return nil
 	}
 	out := make([]llm.Block, 0, len(r.attachments))
+	used := 0
+	var deferred []string
 	for _, a := range r.attachments {
+		// base64 is what actually travels, and it is a third larger than the
+		// file — measuring the file would under-count the thing being capped.
+		size := len(a.Data)
+		if used > 0 && used+size > maxTurnAttachBytes {
+			deferred = append(deferred, a.Path)
+			continue
+		}
+		used += size
 		out = append(out, llm.ImageBlock(a.MediaType, a.Data))
+	}
+	// Say what was held back, or the model sees fewer pictures than it asked
+	// for with no way to know which are missing.
+	if len(deferred) > 0 {
+		out = append(out, llm.TextBlock(fmt.Sprintf(
+			"Not attached, to keep this turn's request within its size limit: %s. View them in a later turn, one or two at a time.",
+			strings.Join(deferred, ", "))))
 	}
 	r.attachments = nil
 	return out

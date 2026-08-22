@@ -116,6 +116,19 @@ type Request struct {
 	OutputConfig *OutputConfig `json:"output_config,omitempty"`
 	Messages     []Message     `json:"messages"`
 	Tools        []Tool        `json:"tools,omitempty"`
+	// Container carries a server-side execution container forward.
+	//
+	// Some server tools run code on the provider's side — the current
+	// web_search filters its results that way — and that execution lives in a
+	// container the conversation is expected to name again on the next turn.
+	// Without it the provider refuses to continue a turn that has code
+	// execution outstanding, which killed a run mid-way: the model had done the
+	// work and the next request could not be made.
+	//
+	// Nothing here is granted by us. The container is the provider's, on the
+	// provider's machines, holding only what this conversation already sent it;
+	// carrying its id is bookkeeping, not a new capability.
+	Container string `json:"container,omitempty"`
 }
 
 // Response is the subset of the Messages API response the agent needs.
@@ -126,6 +139,23 @@ type Response struct {
 	StopReason string  `json:"stop_reason"`
 	Content    []Block `json:"content"`
 	Usage      Usage   `json:"usage"`
+	// Container is present when the turn used server-side code execution. Its
+	// id has to come back on the next request — see Request.Container.
+	Container *Container `json:"container,omitempty"`
+}
+
+// Container identifies a provider-side execution environment.
+type Container struct {
+	ID string `json:"id"`
+}
+
+// ContainerID returns the container to carry forward, or "" when the turn used
+// none. A nil check in one place, because every caller wants the same thing.
+func (r *Response) ContainerID() string {
+	if r == nil || r.Container == nil {
+		return ""
+	}
+	return r.Container.ID
 }
 
 // Usage is the token accounting returned with each response.

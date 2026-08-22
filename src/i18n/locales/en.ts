@@ -362,6 +362,7 @@ export const en: Dict = {
     },
 
     rag: {
+      reusedCount: "last rebuild: {{embedded}} embedded, {{reused}} reused",
       desc: "A dedicated RAG container vector-indexes your knowledge sources — both read-only local mounts and external HTTPS documents — scoped as global, in-project or organization-wide. Agents can search only via rag_search through the gateway; the sandbox never reaches the host directly (external fetches finish inside the RAG container, so no sandbox→host network surface is opened).",
       indexerOffline:
         "Cannot reach the RAG indexer (127.0.0.1:8790). Check that you launched the desktop app, and that the image exists — `docker build -t orchestra/rag:latest ragindex/`.",
@@ -760,7 +761,7 @@ export const en: Dict = {
     },
     ragSearch: {
       description:
-        "Search the registered knowledge base and retrieve relevant document chunks. Use it to check facts or consult a specification.",
+        "Search the registered knowledge base and retrieve relevant document chunks. Use it to check facts or consult a specification. The source path on each result names its position in the index, not a file in /work — do not try to open it.",
       query: "Search query (natural language is fine)",
     },
   },
