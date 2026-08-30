@@ -291,6 +291,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /daily/tickets", s.handleTickets)
 	mux.HandleFunc("GET /daily/runs", s.handleRuns)
 	// The gallery: what a scheduled run produced, and the bytes of one artifact.
+	// Files the author gives a schedule, staged into every run's directory.
+	mux.HandleFunc("POST /daily/attachment", s.handleScheduleAttach)
+	mux.HandleFunc("DELETE /daily/attachment", s.handleScheduleDetach)
 	mux.HandleFunc("GET /daily/artifacts", s.handleDailyArtifacts)
 	mux.HandleFunc("GET /daily/artifact", s.handleDailyArtifact)
 	mux.HandleFunc("DELETE /daily/artifact", s.handleDailyArtifactDelete)

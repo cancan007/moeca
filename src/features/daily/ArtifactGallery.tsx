@@ -48,7 +48,9 @@ const cardTitle: CSSProperties = { font: "600 11.5px 'IBM Plex Sans'", color: "v
 const cardSub: CSSProperties = { font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-dim)" };
 const cornerDot = (bg: string): CSSProperties => ({ position: "absolute", left: 7, top: 7, width: 8, height: 8, borderRadius: 2, background: bg });
 
-function formatSize(n: number): string {
+/** Exported so the schedule editor lists attachment sizes the same way the
+ *  gallery lists artifact sizes — the two are files of the same run. */
+export function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;

@@ -529,6 +529,10 @@ export const ja = {
   daily: {
     knowledgeScopeHint: "未指定ならナレッジを参照しません",
     scopeUnset: "未指定（ナレッジを参照しない）",
+    attachments: "最初から置いておくファイル",
+    attachmentsHint: "実行開始前に作業フォルダへコピーされます",
+    addAttachment: "ファイルを添付",
+    attachmentPending: "保存時に添付",
     scopeGlobal: "全体共有のナレッジのみ（Global）",
     scopeWholeOrg: "{{name}} 全体",
     knowledgeScope: "参照するナレッジ",

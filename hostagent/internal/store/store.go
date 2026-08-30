@@ -65,6 +65,24 @@ type Schedule struct {
 	// gateway refuses a session that never stated an entitlement. Reaching the
 	// knowledge shared with everyone is the "global" scope, chosen explicitly.
 	Scope *KnowledgeScope `json:"scope,omitempty"`
+	// Attachments are files the author gave this schedule, copied into the run's
+	// working directory before its agents start. Metadata only — the bytes live
+	// beside the database, not in it.
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// Attachment is one file staged into every run of a schedule.
+//
+// A Daily run starts in an empty directory, which is right for output but
+// leaves no way to hand its agents an input — a reference picture, a CSV to
+// summarise, a template to fill in. Knowledge cannot serve that: it is a
+// searchable corpus shared across schedules, and reaches the sandbox only
+// through retrieval. This is the other kind of input, the one that belongs to
+// this task and is simply meant to be there when it starts.
+type Attachment struct {
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	AddedAt string `json:"addedAt"` // RFC3339
 }
 
 // scheduleMeta is what we persist in the schedules.meta JSON column.
@@ -80,6 +98,7 @@ type scheduleMeta struct {
 	TemplateRef   string          `json:"templateRef,omitempty"`
 	RunSpec       json.RawMessage `json:"runSpec,omitempty"`
 	Scope         *KnowledgeScope `json:"scope,omitempty"`
+	Attachments   []Attachment    `json:"attachments,omitempty"`
 }
 
 // SQLiteStore is the concrete store. A single connection is used so an
@@ -143,7 +162,7 @@ func (s *SQLiteStore) List() ([]*Schedule, error) {
 
 // Create inserts a schedule and returns it with its assigned "sch-<n>" ID.
 func (s *SQLiteStore) Create(sc *Schedule) (*Schedule, error) {
-	meta, err := json.Marshal(scheduleMeta{Goal: sc.Goal, Milestones: sc.Milestones, TemplateLabel: sc.TemplateLabel, TemplateRef: sc.TemplateRef, RunSpec: sc.RunSpec, Scope: sc.Scope})
+	meta, err := json.Marshal(scheduleMeta{Goal: sc.Goal, Milestones: sc.Milestones, TemplateLabel: sc.TemplateLabel, TemplateRef: sc.TemplateRef, RunSpec: sc.RunSpec, Scope: sc.Scope, Attachments: sc.Attachments})
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +185,7 @@ func (s *SQLiteStore) Create(sc *Schedule) (*Schedule, error) {
 // updated row (nil if the id is unknown). Used to re-sync a bound template's
 // compiled run when its per-granularity prompt is edited.
 func (s *SQLiteStore) Update(sc *Schedule) (*Schedule, error) {
-	meta, err := json.Marshal(scheduleMeta{Goal: sc.Goal, Milestones: sc.Milestones, TemplateLabel: sc.TemplateLabel, TemplateRef: sc.TemplateRef, RunSpec: sc.RunSpec, Scope: sc.Scope})
+	meta, err := json.Marshal(scheduleMeta{Goal: sc.Goal, Milestones: sc.Milestones, TemplateLabel: sc.TemplateLabel, TemplateRef: sc.TemplateRef, RunSpec: sc.RunSpec, Scope: sc.Scope, Attachments: sc.Attachments})
 	if err != nil {
 		return nil, err
 	}
@@ -253,6 +272,7 @@ func scanSchedule(sc scanner) (*Schedule, error) {
 			out.TemplateRef = m.TemplateRef
 			out.RunSpec = m.RunSpec
 			out.Scope = m.Scope
+			out.Attachments = m.Attachments
 		}
 	}
 	return out, nil

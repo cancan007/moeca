@@ -526,6 +526,10 @@ export const en: Dict = {
   daily: {
     knowledgeScopeHint: "Unset retrieves nothing",
     scopeUnset: "Unset (no knowledge)",
+    attachments: "Files it starts with",
+    attachmentsHint: "copied into the run's folder before it begins",
+    addAttachment: "Attach a file",
+    attachmentPending: "on save",
     scopeGlobal: "Only knowledge shared with everyone (Global)",
     scopeWholeOrg: "All of {{name}}",
     knowledgeScope: "Knowledge it may read",

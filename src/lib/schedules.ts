@@ -35,6 +35,22 @@ export interface Schedule {
    *  Absent means no scope, and such a run retrieves nothing at all; reaching
    *  the knowledge shared with everyone is the "global" scope, chosen. */
   scope?: KnowledgeScope;
+  /** Files staged into every run's working directory before its agents start.
+   *  Read-only here: they are added and removed through their own routes, not
+   *  by writing the schedule, because the bytes travel separately. */
+  attachments?: Attachment[];
+}
+
+/** One file a schedule hands its own agents.
+ *
+ *  Distinct from knowledge, which is a searchable corpus shared across
+ *  schedules and reached only through retrieval. An attachment is an input that
+ *  belongs to this task and is simply on disk when it starts — a reference
+ *  picture, a CSV to summarise, a template to fill in. */
+export interface Attachment {
+  name: string;
+  size: number;
+  addedAt: string;
 }
 
 /** What a schedule may retrieve, named as a place in the Knowledge graph.
@@ -118,6 +134,33 @@ export const schedules = {
     req<{ removed: string }>(`/schedules?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
   toggle: (id: string) =>
     req<Schedule>("/schedules/toggle", { method: "POST", body: JSON.stringify({ id }) }),
+
+  /** Attach a file to a schedule. The bytes are copied host-side now rather
+   *  than the path being remembered: a schedule fires unattended for months, and
+   *  pointing at a file on this machine would mean a run that breaks when a
+   *  folder is tidied — or worse, one that quietly picks up a later version.
+   *
+   *  Sent as multipart rather than through `req`, which sets a JSON content
+   *  type; the browser writes its own boundary and must not be overridden. */
+  async attach(id: string, file: File): Promise<Schedule> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/daily/attachment?schedule=${encodeURIComponent(id)}`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<Schedule>;
+  },
+
+  detach: (id: string, name: string) =>
+    req<Schedule>(
+      `/daily/attachment?schedule=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    ),
   /** Fire a schedule now, without waiting for its cron. Works on a paused one:
    *  pausing stops the clock, not the operator. */
   runNow: (id: string) =>

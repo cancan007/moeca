@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, type CSSProperties } from "react";
-import { schedules as schedulesApi, scheduleTask, type Schedule as LiveSchedule, type SchedulePerspective, type KnowledgeScope } from "@/lib/schedules";
+import { schedules as schedulesApi, scheduleTask, type Attachment, type Schedule as LiveSchedule, type SchedulePerspective, type KnowledgeScope } from "@/lib/schedules";
 import { daily as dailyApi, type Ticket, type ScheduleRun } from "@/lib/daily";
 import { useStore } from "@/store/useStore";
 import { templateOptions, compileRef, buildRunSpec, type TemplateStores } from "@/lib/agentTemplates";
-import { ArtifactGallery, DailyRunDrawer } from "./ArtifactGallery";
+import { ArtifactGallery, DailyRunDrawer, formatSize } from "./ArtifactGallery";
 import { calendarRuns, runStateLabel, type CalendarRun } from "./calendarRuns";
 import { parseCron } from "@/lib/cron";
 import { knowledge as knowledgeApi } from "@/lib/knowledge";
@@ -448,6 +448,13 @@ export function Daily() {
   // undefined means no scope was chosen, and such a run retrieves nothing: the
   // gateway refuses a session that never stated an entitlement.
   const [draftScope, setDraftScope] = useState<KnowledgeScope | undefined>(undefined);
+  // Attachments already on the schedule, and files chosen for one that does not
+  // exist yet. A new schedule has no id to upload against, so the files wait in
+  // the draft and go up once creating it returns one — rather than making the
+  // author save, reopen, and attach.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [attachBusy, setAttachBusy] = useState(false);
   const [knowledgeTree, setKnowledgeTree] = useState<{ orgs: { id: string; name: string }[]; projects: { id: string; name: string; orgId: string }[] }>({ orgs: [], projects: [] });
   useEffect(() => {
     knowledgeApi.graph()
@@ -561,6 +568,8 @@ export function Daily() {
     setDraftMilestones([""]);
     setDraftTemplateRef("");
     setDraftScope(undefined);
+    setAttachments([]);
+    setPendingFiles([]);
     setEditingId(null);
     setCronOverride(null);
   }
@@ -573,6 +582,8 @@ export function Daily() {
     setDraftMilestones(sc.milestones?.length ? sc.milestones.map((m) => m.title) : [""]);
     setDraftTemplateRef(sc.templateRef ?? "");
     setDraftScope(sc.scope);
+    setAttachments(sc.attachments ?? []);
+    setPendingFiles([]);
 
     const form = parseCron(sc.cron);
     if (form) {
@@ -652,10 +663,17 @@ export function Daily() {
         scope: draftScope ?? null,
       };
       try {
-        if (editingId) {
-          await schedulesApi.update(editingId, spec);
+        // The id the attachments belong to: an existing one, or the one
+        // creating the schedule just returned. Files chosen before there was an
+        // id go up here rather than being lost.
+        let id = editingId;
+        if (id) {
+          await schedulesApi.update(id, spec);
         } else {
-          await schedulesApi.create(spec);
+          id = (await schedulesApi.create(spec)).id;
+        }
+        for (const f of pendingFiles) {
+          await schedulesApi.attach(id, f);
         }
         await refreshSchedules();
       } catch (e) {
@@ -1172,6 +1190,85 @@ export function Daily() {
                     </optgroup>
                   ))}
                 </select>
+              </div>
+
+              {/* Attachments: the schedule's other kind of input. Knowledge is a
+                  corpus this run may search; these are files it simply finds in
+                  its working directory when it starts. Sitting beside the scope
+                  selector because that is the question they both answer — what
+                  does this task get to work from. */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ font: "600 11px 'IBM Plex Sans'", color: "var(--tx3)" }}>{t("daily.attachments")}</span>
+                  <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("daily.attachmentsHint")}</span>
+                </div>
+                {attachments.length === 0 && pendingFiles.length === 0 ? null : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {attachments.map((a) => (
+                      <div key={a.name} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", border: "1px solid var(--bd2)", borderRadius: 7, padding: "7px 10px" }}>
+                        <span style={{ font: "500 10.5px 'IBM Plex Mono'", color: "var(--tx2)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                        <span style={{ font: "400 9px 'IBM Plex Mono'", color: "var(--tx-faint)", flex: "none" }}>{formatSize(a.size)}</span>
+                        <div
+                          onClick={attachBusy || !editingId ? undefined : async () => {
+                            setAttachBusy(true);
+                            try {
+                              const sc = await schedulesApi.detach(editingId, a.name);
+                              setAttachments(sc.attachments ?? []);
+                            } catch (e) {
+                              setLiveError(e instanceof Error ? e.message : String(e));
+                            } finally {
+                              setAttachBusy(false);
+                            }
+                          }}
+                          style={{ cursor: attachBusy ? "default" : "pointer", color: "var(--tx-faint)", font: "400 11px 'IBM Plex Sans'", flex: "none" }}
+                        >
+                          ×
+                        </div>
+                      </div>
+                    ))}
+                    {/* Chosen but not yet uploaded — a new schedule has no id to
+                        attach against until it is saved. Marked so the list does
+                        not claim they are already on the run. */}
+                    {pendingFiles.map((f, i) => (
+                      <div key={`${f.name}-${i}`} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", border: "1px dashed var(--bd2)", borderRadius: 7, padding: "7px 10px" }}>
+                        <span style={{ font: "500 10.5px 'IBM Plex Mono'", color: "var(--tx3)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
+                        <span style={{ font: "600 8.5px 'IBM Plex Mono'", color: "var(--amber)", flex: "none" }}>{t("daily.attachmentPending")}</span>
+                        <div onClick={() => setPendingFiles((ps) => ps.filter((_, j) => j !== i))} style={{ cursor: "pointer", color: "var(--tx-faint)", font: "400 11px 'IBM Plex Sans'", flex: "none" }}>×</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label style={{ font: "500 10.5px 'IBM Plex Sans'", color: "var(--ac)", cursor: attachBusy ? "default" : "pointer" }}>
+                  + {t("daily.addAttachment")}
+                  <input
+                    type="file"
+                    multiple
+                    disabled={attachBusy}
+                    style={{ display: "none" }}
+                    onChange={async (e) => {
+                      const picked = Array.from(e.target.files ?? []);
+                      e.target.value = ""; // so re-picking the same file fires again
+                      if (picked.length === 0) return;
+                      // An existing schedule takes them now; a new one holds them
+                      // until saving produces the id they belong to.
+                      if (!editingId) {
+                        setPendingFiles((ps) => [...ps, ...picked]);
+                        return;
+                      }
+                      setAttachBusy(true);
+                      try {
+                        let sc: LiveSchedule | undefined;
+                        for (const f of picked) sc = await schedulesApi.attach(editingId, f);
+                        if (sc) setAttachments(sc.attachments ?? []);
+                        await refreshSchedules();
+                      } catch (err) {
+                        setLiveError(err instanceof Error ? err.message : String(err));
+                      } finally {
+                        setAttachBusy(false);
+                      }
+                    }}
+                  />
+                </label>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

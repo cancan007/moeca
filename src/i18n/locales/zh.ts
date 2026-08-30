@@ -526,6 +526,10 @@ export const zh: Dict = {
   daily: {
     knowledgeScopeHint: "未指定则不检索知识",
     scopeUnset: "未指定（不检索知识）",
+    attachments: "运行开始时已就位的文件",
+    attachmentsHint: "在运行开始前复制到工作目录",
+    addAttachment: "添加文件",
+    attachmentPending: "保存时上传",
     scopeGlobal: "仅全体共享的知识（Global）",
     scopeWholeOrg: "{{name}} 全部",
     knowledgeScope: "可检索的知识",

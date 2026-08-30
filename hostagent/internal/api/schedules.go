@@ -347,6 +347,11 @@ func (s *Server) launchScheduledRun(sc *store.Schedule, now time.Time) (outputDi
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", "", "", fmt.Errorf("creating output dir: %w", err)
 	}
+	// The author's own files, before anything starts. A fresh copy per
+	// occurrence, so a stage that rewrites one cannot reach the next run.
+	if n := s.stageAttachments(sc, outputDir); n > 0 {
+		log.Printf("hostagent: schedule %s: staged %d attachment(s) into %s", sc.ID, n, outputDir)
+	}
 	taskID := sanitize(sc.ID + "-" + strconv.FormatInt(now.Unix(), 10))
 	// The scope is resolved now rather than when it was chosen: the groups
 	// under a project change as the graph is edited, and a schedule that meant
