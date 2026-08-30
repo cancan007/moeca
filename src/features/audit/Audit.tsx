@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { gateway, type AccessLog, type GatewayMetrics } from "@/lib/gateway";
 import { sandbox, type RunStatus } from "@/lib/sandbox";
 import { isDesktop } from "@/lib/providers";
+import { fetchRunLabels, type RunLabel } from "@/lib/runLabels";
 import { buildLiveTree, fmtTokens, type Kind, type Layer, type Node, type Part } from "./a2a";
 import { summarizeRuns, diffRuns, isBetter, type RunSummary, type Delta } from "./runDiff";
 
@@ -372,6 +373,37 @@ export function Audit() {
     return out;
   }, [liveLogs]);
 
+  // What each of those runs was, in a person's terms. The log only carries the
+  // orchestrator id, and an id is not a reason to open a trace.
+  //
+  // Refetched when a run appears that the current lookup cannot name, rather
+  // than on the three-second poll beside it: run histories change when a run
+  // starts, not continuously, and a name that has not arrived yet costs a row
+  // its title for one poll rather than costing every poll two requests.
+  const [runLabels, setRunLabels] = useState<Map<string, RunLabel>>(new Map());
+  // Keyed by WHICH runs are unnamed, not merely whether any are. A run nobody
+  // recorded stays unnamed forever, and a boolean would sit true from then on —
+  // so every run started afterwards would inherit that "already asked" and
+  // never get looked up at all.
+  const unnamedKey = tracableRuns
+    .filter((r) => !runLabels.has(r.id))
+    .map((r) => r.id)
+    .join(",");
+  useEffect(() => {
+    if (!live || !unnamedKey) return;
+    let cancelled = false;
+    fetchRunLabels()
+      .then((m) => {
+        if (!cancelled) setRunLabels(m);
+      })
+      // A run nobody recorded is normal — a delegated sub-agent, a run launched
+      // before the history existed — and it simply keeps showing its id.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [live, unnamedKey]);
+
   // optimize (run-diff) state
   const runSummaries = useMemo<RunSummary[]>(() => (live ? summarizeRuns(liveLogs) : MOCK_SUMMARIES), [live, liveLogs]);
   const [baseRun, setBaseRun] = useState<string | null>(null);
@@ -488,17 +520,38 @@ export function Audit() {
             <div style={{ font: "600 8.5px 'IBM Plex Mono'", color: "var(--tx-faint)", letterSpacing: "0.4px" }}>
               {t("audit.knowledgeTrace")}
             </div>
-            {tracableRuns.slice(0, 6).map((r) => (
-              <div
-                key={r.id}
-                onClick={() => navigate(`/knowledge?run=${encodeURIComponent(r.id)}`)}
-                style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 9px", borderRadius: 7, cursor: "pointer", background: "var(--bg-card)", border: "1px solid var(--bd)" }}
-                title={t("audit.knowledgeTraceTip")}
-              >
-                <span style={{ font: "500 9.5px 'IBM Plex Mono'", color: "var(--tx3)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.id}</span>
-                <span style={{ font: "600 9px 'IBM Plex Mono'", color: r.retrievals ? "#34d3e0" : "var(--tx-faint)" }}>{t("audit.searchCount", { count: r.retrievals })}</span>
-              </div>
-            ))}
+            {tracableRuns.slice(0, 6).map((r) => {
+              const label = runLabels.get(r.id);
+              return (
+                <div
+                  key={r.id}
+                  onClick={() => navigate(`/knowledge?run=${encodeURIComponent(r.id)}`)}
+                  style={{ display: "flex", flexDirection: "column", gap: 3, padding: "7px 9px", borderRadius: 7, cursor: "pointer", background: "var(--bg-card)", border: "1px solid var(--bd)" }}
+                  title={label ? `${label.title}\n${label.sub ? label.sub + "\n" : ""}${r.id}\n\n${t("audit.knowledgeTraceTip")}` : `${r.id}\n\n${t("audit.knowledgeTraceTip")}`}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {label ? (
+                      <span style={{ font: "600 8px 'IBM Plex Mono'", color: label.kind === "Daily" ? "#e0a83e" : "#34d3e0", border: `1px solid ${label.kind === "Daily" ? "#e0a83e" : "#34d3e0"}`, borderRadius: 3, padding: "0 3px", flex: "none" }}>
+                        {label.kind}
+                      </span>
+                    ) : null}
+                    {/* The title when we have one, the id when we do not — never
+                        both in this slot, so the row's first line is always the
+                        most identifying thing known about the run. */}
+                    <span style={{ font: label ? "600 10px 'IBM Plex Sans'" : "500 9.5px 'IBM Plex Mono'", color: label ? "var(--tx2)" : "var(--tx3)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {label ? label.title : r.id}
+                    </span>
+                    <span style={{ font: "600 9px 'IBM Plex Mono'", color: r.retrievals ? "#34d3e0" : "var(--tx-faint)", flex: "none" }}>{t("audit.searchCount", { count: r.retrievals })}</span>
+                  </div>
+                  {/* The id stays visible even when named: it is what a log
+                      search takes, and the title is what decides whether to run
+                      one. */}
+                  <span style={{ font: "400 8.5px 'IBM Plex Mono'", color: "var(--tx-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {label ? (label.sub ? `${label.sub} · ${r.id}` : r.id) : t("audit.unnamedRun")}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ) : null}
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>

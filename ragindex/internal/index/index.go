@@ -154,6 +154,10 @@ type Source struct {
 	// taken back out of every group; deriving from the reported field would
 	// make the narrowing one-way.
 	declared string
+	// abs is where a local source's bytes are on disk, kept so they can be
+	// served without re-deriving which configured root the file came from.
+	// Empty for external sources, whose bytes were never stored.
+	abs string
 	// assumedGlobal marks a source that is global because nothing said
 	// otherwise, as opposed to one whose config says so. The two are the same
 	// scope and behave identically once membership is known; they differ only
@@ -364,7 +368,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 	for _, f := range files {
 		info, err := os.Stat(f.path)
 		if err != nil {
-			sources = append(sources, Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, Groups: groups, Media: f.media, Error: err.Error()})
+			sources = append(sources, Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, abs: f.path, Groups: groups, Media: f.media, Error: err.Error()})
 			continue
 		}
 		if info.Size() == 0 {
@@ -375,7 +379,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 			sidecar = videoSidecar(f.rel, rels)
 		}
 		red := reduce(f.path, f.rel, f.media, info, sidecar)
-		src := Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
+		src := Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, abs: f.path, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
 		if red.err != nil {
 			// One unreadable file is recorded and skipped; the rest of the
 			// folder still indexes. A build that aborts on the first corrupt

@@ -671,6 +671,7 @@ export const ja = {
     knowledgeTrace: "ナレッジのトレース",
     knowledgeTraceTip: "このランがナレッジのどこに到達したかをグラフで確認します",
     searchCount: "{{count}} 検索",
+    unnamedRun: "このランに紐づくタスクの記録がありません",
     tabs: { logs: "ログ", metrics: "メトリクス", optimize: "最適化" },
     a2aTree: "A2Aツリー",
     rawLog: "生ログ",
@@ -765,8 +766,15 @@ export const ja = {
       },
     },
     ragSearch: {
-      description: "登録済みナレッジベースを検索し、関連する文書チャンクを取得する。事実確認や仕様参照に使う。結果に付く出典パスは索引側の位置を示すもので、/work にあるファイルではない — 開こうとしないこと。",
+      description: "登録済みナレッジベースを検索し、関連する文書チャンクを取得する。事実確認や仕様参照に使う。結果に付く出典パスは索引側の位置を示すもので、/work にあるファイルではない — ファイル系ツールで開こうとしないこと。辿るには read_knowledge_source（本文全体）か fetch_knowledge_file（ファイル実体）にそのパスを渡す。",
       query: "検索クエリ（自然文可）",
+    },
+    ragSource: {
+      description: "検索結果の出典パスを指定して、そのナレッジソースの本文を丸ごと読む。検索で返ったチャンクだけでは足りないとき（厳密に従うべき仕様書、キャラクター設定書、チェックリストなど）に使う。返るのはテキストのみ。画像や動画については索引が持つ説明文が返るので、実体が要る場合は fetch_knowledge_file を使う。",
+      source: "出典パス。検索結果の `source` フィールドをそのまま渡す",
+    },
+    ragFile: {
+      description: "検索結果の出典パスを指定して、ナレッジソースをファイルとして /work にダウンロードする。ナレッジ上の画像・動画・PDF の実体を得る唯一の手段（画像を検索しても説明文しか返らない）。画像編集や動画生成の参照画像など、他のツールにファイルを渡す必要があるときに使う。`path` の拡張子は実際のファイル種別に合わせること。",
     },
   },
 
@@ -785,6 +793,7 @@ export const ja = {
     pickFolder: "知識フォルダを選択",
 
     traceOfRun: "ラン <run>{{run}}</run> のトレース",
+    traceOfTask: "<task>{{task}}</task> のトレース",
     searchesReached: "{{queries}} 回の検索 · {{nodes}} ノードに到達",
     partialRecord: "一部記録なし",
     partialRecordTip:

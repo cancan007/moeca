@@ -7,9 +7,10 @@ import (
 	"orchestra/ragindex/internal/index"
 )
 
-// GroupsHeader carries the groups a search is permitted to reach. The gateway
-// sets it from the run's registered session; nothing downstream of the gateway
-// can, because the indexer is not on the sandbox egress network.
+// GroupsHeader carries the groups a caller is permitted to reach — on a search,
+// and on the /source route that follows what a search found. The gateway sets it
+// from the run's registered session; nothing downstream of the gateway can,
+// because the indexer is not on the sandbox egress network.
 //
 // Presence is the policy switch, and the distinction is deliberate:
 //

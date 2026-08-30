@@ -29,6 +29,10 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 200, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("POST /search", s.handleSearch)
+	// The other half of retrieval: a search hands back a source name, this
+	// follows it. Gateway-facing like /search and filtered the same way — see
+	// source.go for why the caller's groups are not in the URL.
+	mux.HandleFunc("POST /source", s.handleSource)
 	mux.HandleFunc("POST /index", s.handleIndex)
 	mux.HandleFunc("GET /sources", s.handleStatus)
 	mux.HandleFunc("GET /status", s.handleStatus)

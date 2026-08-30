@@ -5,7 +5,7 @@
 
 import type { RunStage } from "@/lib/sandbox";
 import type { ProviderInput } from "@/lib/providers";
-import { type ToolDef, type CompiledTool, compileTool, RAG_SEARCH_TOOL } from "@/lib/tools";
+import { type ToolDef, type CompiledTool, compileTool, RAG_FILE_TOOL, RAG_SEARCH_TOOL, RAG_SOURCE_TOOL } from "@/lib/tools";
 import { type GraphTemplate, type SupervisorTemplate, type StaticTemplate, type SoloAgent, soloSystem } from "@/lib/templates";
 // The orchestration prompts this file appends are read from the active locale.
 // Still pure with respect to its arguments — the language is ambient config,
@@ -54,7 +54,13 @@ function stageFromSolo(
   if (!solo || !provider) return null;
   const toolById = new Map(ctx.tools.map((t) => [t.id, t]));
   const customTools = (solo.toolIds ?? []).map((tid) => toolById.get(tid)).filter((t): t is ToolDef => !!t).map(compileTool);
-  const tools: CompiledTool[] = solo.useRag ? [...customTools, RAG_SEARCH_TOOL] : customTools;
+  // Searching and following what a search found are one grant: a source name an
+  // agent is allowed to see is one it is allowed to read, and the indexer
+  // applies the same filter to both. Splitting them into separate switches
+  // would only produce agents that can find a document and not open it.
+  const tools: CompiledTool[] = solo.useRag
+    ? [...customTools, RAG_SEARCH_TOOL, RAG_SOURCE_TOOL, RAG_FILE_TOOL]
+    : customTools;
   return {
     id,
     name: solo.name,

@@ -668,6 +668,7 @@ export const zh: Dict = {
     knowledgeTrace: "知识追踪",
     knowledgeTraceTip: "以图谱查看本次运行到达了知识的哪些位置",
     searchCount: "{{count}} 次检索",
+    unnamedRun: "未记录此次运行对应的任务",
     tabs: { logs: "日志", metrics: "指标", optimize: "优化" },
     a2aTree: "A2A 树",
     rawLog: "原始日志",
@@ -762,8 +763,15 @@ export const zh: Dict = {
       },
     },
     ragSearch: {
-      description: "检索已登记的知识库，获取相关的文档分块。用于事实核对或查阅规格。结果附带的来源路径表示其在索引中的位置，并非 /work 中的文件——请勿尝试打开。",
+      description: "检索已登记的知识库，获取相关的文档分块。用于事实核对或查阅规格。结果附带的来源路径表示其在索引中的位置，并非 /work 中的文件——请勿用文件工具打开。若要顺着它取内容，请将该路径传给 read_knowledge_source（全文）或 fetch_knowledge_file（文件实体）。",
       query: "检索查询（可用自然语言）",
+    },
+    ragSource: {
+      description: "根据检索结果中的来源路径，完整读取该知识来源的正文。当检索返回的分块不足以覆盖整篇文档时使用（须严格遵循的规格书、角色设定、检查清单等）。仅返回文本；对于图片或视频，返回的是索引所持有的描述，若需实体请使用 fetch_knowledge_file。",
+      source: "来源路径，原样复制自检索结果的 `source` 字段",
+    },
+    ragFile: {
+      description: "根据检索结果中的来源路径，将知识来源作为文件下载到 /work。这是获取知识库中图片、视频或 PDF 实体的唯一方式（检索图片只会返回描述）。当需要把文件交给其他工具时使用，例如图像编辑或视频生成的参考图。`path` 的扩展名需与来源的实际类型一致。",
     },
   },
 
@@ -782,6 +790,7 @@ export const zh: Dict = {
     pickFolder: "选择知识文件夹",
 
     traceOfRun: "运行 <run>{{run}}</run> 的追踪",
+    traceOfTask: "<task>{{task}}</task> 的追踪",
     searchesReached: "{{queries}} 次检索 · 到达 {{nodes}} 个节点",
     partialRecord: "部分未记录",
     partialRecordTip: "由于网关的记录量存在上限，返回内容有部分缺失。实际到达的节点可能多于此数。",

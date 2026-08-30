@@ -42,7 +42,7 @@ export function Knowledge() {
   const [stageFilter, setStageFilter] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { graph, index, graphError, indexError, loading, reload, reloadGraph } = useKnowledge();
-  const { runId, trace, stages, error: traceError, setRun } = useTrace();
+  const { runId, trace, stages, label: runLabel, error: traceError, setRun } = useTrace();
   const solos = useStore((s) => s.solos);
   const staticTpls = useStore((s) => s.staticTpls);
   const upsertSolo = useStore((s) => s.upsertSolo);
@@ -187,6 +187,7 @@ export function Knowledge() {
         <TraceBar
           trace={trace}
           stages={stages}
+          label={runLabel}
           selected={stageFilter}
           onSelect={setStageFilter}
           onClear={() => {

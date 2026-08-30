@@ -1,3 +1,4 @@
+import type { RunLabel } from "@/lib/runLabels";
 import type { StageState } from "@/lib/sandbox";
 import { Trans, useTranslation } from "react-i18next";
 import type { Trace } from "./trace";
@@ -14,6 +15,7 @@ import { Button } from "./ui";
 export function TraceBar({
   trace,
   stages,
+  label,
   selected,
   onSelect,
   onClear,
@@ -23,6 +25,8 @@ export function TraceBar({
   trace: Trace;
   /** the run's declared stages, so ones that retrieved nothing still appear. */
   stages: StageState[];
+  /** what the run was, when a history names it. */
+  label: RunLabel | null;
   selected: string | null;
   onSelect: (stageId: string | null) => void;
   onClear: () => void;
@@ -63,9 +67,22 @@ export function TraceBar({
             flex: "none",
           }}
         />
-        <span style={{ font: "500 11px 'IBM Plex Sans'", color: "var(--tx2)", whiteSpace: "nowrap" }}>
-          <Trans i18nKey="knowledge.traceOfRun" values={{ run: trace.run }} components={{ run: <span style={{ fontFamily: "'IBM Plex Mono'", color: "var(--cyan)" }} /> }} />
+        {/* Named by the work when a history knows it, by the id otherwise. The
+            id is kept either way — it is what a log search takes, and losing it
+            to make room for a title would trade one missing half for the
+            other. */}
+        <span style={{ font: "500 11px 'IBM Plex Sans'", color: "var(--tx2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+          {label ? (
+            <Trans i18nKey="knowledge.traceOfTask" values={{ task: label.title }} components={{ task: <span style={{ color: "var(--cyan)" }} /> }} />
+          ) : (
+            <Trans i18nKey="knowledge.traceOfRun" values={{ run: trace.run }} components={{ run: <span style={{ fontFamily: "'IBM Plex Mono'", color: "var(--cyan)" }} /> }} />
+          )}
         </span>
+        {label ? (
+          <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)", whiteSpace: "nowrap", flex: "none" }} title={label.sub}>
+            {label.kind}{label.sub ? ` · ${label.sub}` : ""} · {trace.run}
+          </span>
+        ) : null}
         <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-dim)", whiteSpace: "nowrap" }}>
           {t("knowledge.searchesReached", { queries: trace.queryCount, nodes: trace.reached.size })}
         </span>

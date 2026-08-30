@@ -208,7 +208,8 @@
         "orchestra-rag"
       ],
       "allowPaths": [
-        "/search"
+        "/search",
+        "/source"
       ],
       "rateLimit": {
         "rps": 10,

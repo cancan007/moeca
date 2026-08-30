@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import i18n from "@/i18n";
 import { useSearchParams } from "react-router-dom";
 import { gateway, type AccessLog } from "@/lib/gateway";
+import { fetchRunLabels, type RunLabel } from "@/lib/runLabels";
 import { sandbox, type RunStatus } from "@/lib/sandbox";
 import { buildTrace, EMPTY_TRACE, type Trace } from "./trace";
 
@@ -21,6 +22,9 @@ export interface TraceData {
   trace: Trace;
   /** the run's declared stages, so a stage that reached nothing still shows. */
   stages: RunStatus["stages"];
+  /** what the run was, in a person's terms. Null when no history names it —
+   *  the banner then says what it always said, the id. */
+  label: RunLabel | null;
   error: string;
   loading: boolean;
   setRun: (id: string | null) => void;
@@ -31,6 +35,7 @@ export function useTrace(): TraceData {
   const runId = params.get("run") ?? "";
   const [logs, setLogs] = useState<AccessLog[]>([]);
   const [stages, setStages] = useState<RunStatus["stages"]>([]);
+  const [label, setLabel] = useState<RunLabel | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -38,12 +43,21 @@ export function useTrace(): TraceData {
     if (!runId) {
       setLogs([]);
       setStages([]);
+      setLabel(null);
       setError("");
       return;
     }
     let cancelled = false;
     setLoading(true);
     setError("");
+    // A third read, and the only one that can fail silently: an unnamed run is
+    // an ordinary state (a delegated sub-agent, a run older than the history)
+    // and the trace is perfectly usable without a title.
+    fetchRunLabels()
+      .then((m) => {
+        if (!cancelled) setLabel(m.get(runId) ?? null);
+      })
+      .catch(() => {});
     Promise.allSettled([gateway.logs(), sandbox.runStatus(runId)])
       .then(([l, r]) => {
         if (cancelled) return;
@@ -88,5 +102,5 @@ export function useTrace(): TraceData {
     [setParams],
   );
 
-  return { runId, trace, stages, error, loading, setRun };
+  return { runId, trace, stages, label, error, loading, setRun };
 }

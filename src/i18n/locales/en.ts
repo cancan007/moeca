@@ -668,6 +668,7 @@ export const en: Dict = {
     knowledgeTrace: "Knowledge trace",
     knowledgeTraceTip: "See on the graph where in Knowledge this run reached",
     searchCount: "{{count}} searches",
+    unnamedRun: "no task recorded for this run",
     tabs: { logs: "Logs", metrics: "Metrics", optimize: "Optimize" },
     a2aTree: "A2A tree",
     rawLog: "Raw log",
@@ -763,8 +764,17 @@ export const en: Dict = {
     },
     ragSearch: {
       description:
-        "Search the registered knowledge base and retrieve relevant document chunks. Use it to check facts or consult a specification. The source path on each result names its position in the index, not a file in /work — do not try to open it.",
+        "Search the registered knowledge base and retrieve relevant document chunks. Use it to check facts or consult a specification. The source path on each result names its position in the index, NOT a file in /work — never try to open it with a file tool. To follow it, pass it to read_knowledge_source (the whole text) or fetch_knowledge_file (the file itself).",
       query: "Search query (natural language is fine)",
+    },
+    ragSource: {
+      description:
+        "Read a knowledge source in full, given the source path from a search result. Use it when the chunks a search returned are not the whole document — a specification you must follow exactly, a character sheet, a checklist. Returns text only; for an image or a video it returns the description the index holds, and fetch_knowledge_file gets the file.",
+      source: "Source path, copied verbatim from a search result's `source` field",
+    },
+    ragFile: {
+      description:
+        "Download a knowledge source into /work as a file, given the source path from a search result. This is the only way to obtain the bytes of a knowledge image, video or PDF — searching an image returns only its description. Use it when a file has to be handed to another tool, such as a reference picture for image editing or video generation. Choose the `path` extension to match what the source actually is.",
     },
   },
 
@@ -783,6 +793,7 @@ export const en: Dict = {
     pickFolder: "Choose a knowledge folder",
 
     traceOfRun: "Trace of run <run>{{run}}</run>",
+    traceOfTask: "Trace of <task>{{task}}</task>",
     searchesReached: "{{queries}} searches · reached {{nodes}} nodes",
     partialRecord: "partially recorded",
     partialRecordTip:

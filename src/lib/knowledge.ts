@@ -9,8 +9,10 @@
 //                embedding space and which sources are near it.
 //
 // Nothing here goes through the gateway. These are host-facing management
-// routes; the gateway forwards only /search to the indexer, precisely because
-// these enumerate every source regardless of group.
+// routes; the gateway forwards only /search and /source to the indexer,
+// precisely because these enumerate every source regardless of group. The two
+// it does forward are both filtered by the caller's granted groups — one finds
+// a source, the other follows it — while these answer about the whole index.
 
 const HOST = import.meta.env.VITE_HOSTAGENT_URL ?? "http://127.0.0.1:8788";
 const RAG = import.meta.env.VITE_RAG_URL ?? "http://127.0.0.1:8790";

@@ -149,6 +149,59 @@ export const RAG_SEARCH_TOOL: CompiledTool = {
   targetHeader: "",
 };
 
+/** Built-in knowledge-source readers, granted alongside search.
+ *
+ * A search answers with chunks and the name of the source each came from. That
+ * name was a dead end: the knowledge folder is mounted into the indexer and
+ * nowhere else, so an agent told "the reference picture is at
+ * kon/images/dog_sitting.JPEG" could not reach it — and for a picture the name
+ * was all retrieval could ever return, since images are indexed as metadata.
+ *
+ * These two follow the pointer. Both are filtered exactly as a search is: a
+ * source a run cannot reach by searching it cannot reach by naming it either.
+ *
+ * They are separate tools rather than one with a mode, because the model should
+ * pick between them by what it wants, not by remembering a flag — and because
+ * only one of them writes a file. */
+export const RAG_SOURCE_TOOL: CompiledTool = {
+  name: "read_knowledge_source",
+  get description() { return i18n.t("tools.ragSource.description"); },
+  inputSchema: {
+    type: "object",
+    properties: {
+      source: { type: "string", get description() { return i18n.t("tools.ragSource.source"); } },
+    },
+    required: ["source"],
+  },
+  method: "POST",
+  path: "/rag/source",
+  headers: {},
+  body: '{"source":"{{source}}","as":"text"}',
+  targetHeader: "",
+};
+
+/** The bytes, written into the worktree — which is what makes a knowledge image
+ *  usable by edit_image or by a video model's reference input. Those read their
+ *  file from /work, so fetching has to land there rather than come back as a
+ *  tool result. */
+export const RAG_FILE_TOOL: CompiledTool = {
+  name: "fetch_knowledge_file",
+  get description() { return i18n.t("tools.ragFile.description"); },
+  inputSchema: {
+    type: "object",
+    properties: {
+      source: { type: "string", get description() { return i18n.t("tools.ragSource.source"); } },
+    },
+    required: ["source"],
+  },
+  method: "POST",
+  path: "/rag/source",
+  headers: {},
+  body: '{"source":"{{source}}","as":"raw"}',
+  targetHeader: "",
+  output: { kind: "binary", extensions: [".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf", ".mp4", ".webm", ".txt", ".md", ".csv", ".vtt", ".srt"] },
+};
+
 export function compileTool(t: ToolDef): CompiledTool {
   return {
     name: t.name,
