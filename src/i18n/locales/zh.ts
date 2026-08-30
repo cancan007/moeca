@@ -543,6 +543,8 @@ export const zh: Dict = {
     countUnit: "{{count}} 项",
     connecting: "连接中…",
     hostConnected: "已连接 host agent",
+    hostRetry: "未连接",
+    hostUnreachable: "无法连接 host agent。请确认 moeca 的 sidecar 是否已启动。",
     hostConnect: "连接 host agent (127.0.0.1:8788)",
 
     perspective: { discovery: "新发现", contextOpt: "优化", automation: "自动化" },

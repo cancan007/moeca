@@ -546,6 +546,8 @@ export const ja = {
     countUnit: "{{count}} 件",
     connecting: "接続中…",
     hostConnected: "host agent に接続中",
+    hostRetry: "未接続",
+    hostUnreachable: "host agent に接続できませんでした。moeca のサイドカーが起動しているか確認してください。",
     hostConnect: "host agent に接続 (127.0.0.1:8788)",
 
     perspective: { discovery: "新発見", contextOpt: "最適化", automation: "自動化" },

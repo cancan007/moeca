@@ -543,6 +543,8 @@ export const en: Dict = {
     countUnit: "{{count}}",
     connecting: "Connecting…",
     hostConnected: "Connected to the host agent",
+    hostRetry: "not connected",
+    hostUnreachable: "Could not reach the host agent. Check that moeca's sidecars are running.",
     hostConnect: "Connect to the host agent (127.0.0.1:8788)",
 
     perspective: { discovery: "Discovery", contextOpt: "Optimization", automation: "Automation" },

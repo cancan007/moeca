@@ -95,7 +95,7 @@ an Intel build.
   notifications, delivery board, review drawer.
 - Routing: hash routes map 1:1 to the top-nav tabs (+ `/workspace`).
 - Screens live under `src/features/<screen>/`; the app frame is `src/components/layout/`.
-- **Security model** — how untrusted agents are isolated from the host and internet
+- **Security model** — how untrusted agents are isolated from the host and internet ([SECURITY.md](SECURITY.md) states what is protected, and what is not)
   (L3 `--internal` egress island, the dual-homed gateway, L7 allowlist/SSRF-deny/key
   injection, the file-based delegation channel), and how the same chokepoint doubles
   as a complete, tamper-evident **audit** plane, is documented in

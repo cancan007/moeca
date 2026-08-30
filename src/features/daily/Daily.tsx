@@ -71,37 +71,10 @@ function shortWhen(rfc3339: string): string {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-interface Schedule {
-  name: string;
-  kind: Perspective;
-  cron: string;
-  pipeName: string;
-  review?: string;
-}
-
-const schedules: Schedule[] = [
-  { name: "競合UI監視", kind: "discovery", cron: "0 8 * * *", pipeName: "Scout Pipeline" },
-  { name: "コンテキスト最適化", kind: "context-opt", cron: "0 18 * * *", pipeName: "Tuner Pipeline", review: "レビュープロセスあり" },
-  { name: "日次レポート配信", kind: "automation", cron: "30 9 * * *", pipeName: "Runner Pipeline" },
-  { name: "週次サマリ", kind: "discovery", cron: "0 7 * * 1", pipeName: "Scout Pipeline" },
-];
 
 // runs generated per calendar date --------------------------------------------
 
 
-// The offline demo calendar. The live one is derived from real schedules and
-// recorded occurrences (see calendarRuns).
-function mockRunsForDate(d: Date): CalendarRun[] {
-  const at = (time: string, name: string, perspective: string): CalendarRun =>
-    ({ time, name, perspective, scheduleId: name, active: true });
-  const runs = [
-    at("08:00", "競合UI監視", "discovery"),
-    at("09:30", "日次レポート配信", "automation"),
-    at("18:00", "コンテキスト最適化", "context-opt"),
-  ];
-  if (d.getDay() === 1) runs.unshift(at("07:00", "週次サマリ", "discovery"));
-  return runs.slice().sort((a, b) => a.time.localeCompare(b.time));
-}
 
 // date helpers ----------------------------------------------------------------
 
@@ -165,7 +138,6 @@ interface Artifact {
   imgCount?: number;
 }
 
-const VIDEO_GRAD = "linear-gradient(135deg,#1c1530,#2a1d44)";
 const VOICE_GRAD = "linear-gradient(135deg,#241c0e,#332611)";
 const IMAGE_GRAD = "linear-gradient(135deg,#0e2630,#123845)";
 
@@ -237,27 +209,9 @@ function smallToggle(active: boolean): CSSProperties {
   };
 }
 
-const cardBase: CSSProperties = {
-  cursor: "pointer",
-  background: "var(--bg-card2)",
-  border: "1px solid var(--bd2)",
-  borderRadius: 10,
-  overflow: "hidden",
-  display: "flex",
-  flexDirection: "column",
-};
-const cardMeta: CSSProperties = { padding: "10px 11px", display: "flex", flexDirection: "column", gap: 5 };
-const cardTitle: CSSProperties = { font: "600 11.5px 'IBM Plex Sans'", color: "var(--tx)", lineHeight: 1.35 };
-const cardSub: CSSProperties = { font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-dim)" };
-const cornerDot = (bg: string): CSSProperties => ({ position: "absolute", left: 7, top: 7, width: 8, height: 8, borderRadius: 2, background: bg });
 
-function skel(w: string, mt?: number): CSSProperties {
-  return { height: 5, width: w, background: "var(--skel)", borderRadius: 3, ...(mt ? { marginTop: mt } : {}) };
-}
 
 // waveform bars for a card (compact) and modal (wide)
-const CARD_WAVE = [14, 28, 20, 34, 16, 24];
-const CARD_WAVE_2 = [18, 30, 12, 26, 20];
 const MODAL_WAVE = Array.from({ length: 64 }, (_, i) => 8 + Math.round(Math.abs(Math.sin(i * 0.7) + Math.cos(i * 0.31)) * 60));
 
 // A schedule's composition is its bound agent template and nothing else: a
@@ -349,6 +303,14 @@ export function Daily() {
     } catch {
       /* tickets are best-effort; schedule errors surface via liveError */
     }
+  }, []);
+
+  // Daily has one source of truth: the host agent. Connect on mount rather than
+  // waiting to be asked — a screen that opens showing nothing until you press a
+  // button is a screen that looks broken.
+  useEffect(() => {
+    void connectLive();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function connectLive() {
@@ -501,12 +463,6 @@ export function Daily() {
     return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
   }
 
-  function openArtifact(a: Artifact) {
-    setArtifact(a);
-    setPlaying(false);
-    setImgMode("grid");
-    setTextMode("rendered");
-  }
   function closeArtifact() {
     setArtifact(null);
   }
@@ -526,8 +482,8 @@ export function Daily() {
   // Every calendar view goes through this, so the month grid, the week and day
   // views and the side panel can never disagree about a date.
   const runsForDate = useCallback(
-    (d: Date): CalendarRun[] => (live ? calendarRuns(d, liveSchedules, runs, today) : mockRunsForDate(d)),
-    [live, liveSchedules, runs, today],
+    (d: Date): CalendarRun[] => calendarRuns(d, liveSchedules, runs, today),
+    [liveSchedules, runs, today],
   );
   const selRuns = runsForDate(selectedDate);
   const calLabel = monthYearLabel(new Date(year, month, 1));
@@ -717,7 +673,7 @@ export function Daily() {
       <div style={{ width: 268, flex: "none", background: "var(--bg-panel)", borderRight: "1px solid var(--bd)", padding: "16px 13px", display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ font: "600 13px 'IBM Plex Sans'", color: "var(--tx)" }}>Schedules</span>
-          <span style={{ font: "400 10.5px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>{live ? liveSchedules.length : schedules.length}</span>
+          <span style={{ font: "400 10.5px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>{liveSchedules.length}</span>
           <div onClick={() => setNewSchedOpen(true)} title={t("daily.newSchedule")} style={{ marginLeft: "auto", width: 22, height: 22, borderRadius: 6, background: "var(--tint-active)", border: "1px solid var(--tint-active-bd)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ac)", fontSize: 14, cursor: "pointer" }}>+</div>
         </div>
 
@@ -872,28 +828,6 @@ export function Daily() {
           </div>
         )}
 
-        {/* mock schedule list (default) */}
-        {!live && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-          {schedules.map((s) => (
-            <div key={s.name} style={{ background: "var(--bg-card2)", border: "1px solid var(--bd2)", borderRadius: 10, padding: "11px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, background: kindColor(s.kind) }} />
-                <span style={{ font: "600 12px 'IBM Plex Sans'", color: "var(--tx2)" }}>{s.name}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, font: "500 10px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>
-                <span style={{ color: kindColor(s.kind) }}>{perspectiveLabel(s.kind)}</span>
-                <span>{s.cron}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--tx-faint)" }} />
-                <span style={{ font: "500 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{s.pipeName}</span>
-              </div>
-              {s.review && <div style={{ font: "400 9.5px 'IBM Plex Mono'", color: "#d39a4e" }}>{s.review}</div>}
-            </div>
-          ))}
-        </div>
-        )}
       </div>
 
       {/* main column */}
@@ -918,7 +852,7 @@ export function Daily() {
           >
             <span className={live ? "oc-active-dot" : undefined} style={{ width: 7, height: 7, borderRadius: "50%", background: live ? "var(--green)" : liveError ? "var(--red)" : "var(--tx-dim)" }} />
             <span style={{ font: "500 11px 'IBM Plex Mono'", color: live ? "#67c9a4" : liveError ? "var(--red)" : "var(--tx3)" }}>
-              {connecting ? t("daily.connecting") : live ? "live · host agent" : "mock data"}
+              {connecting ? t("daily.connecting") : live ? "host agent" : t("daily.hostRetry")}
             </span>
           </div>
           <div style={{ flex: 1 }} />
@@ -930,7 +864,7 @@ export function Daily() {
               <div style={legendItem}><div style={legendDot("#e0a83e")} />voice</div>
             </div>
           )}
-          {dailyIsCalendar && (
+          {dailyIsCalendar && live && (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div style={legendItem}><div style={legendDot("#d39a4e")} />{t("daily.perspective.discovery")}</div>
               <div style={legendItem}><div style={legendDot("#5b9fe8")} />{t("daily.perspective.contextOpt")}</div>
@@ -939,127 +873,26 @@ export function Daily() {
           )}
         </div>
 
-        {/* gallery view — live shows what the schedules actually produced; the
-            mock gallery below is the offline demo. */}
-        {dailyIsGallery && live && <ArtifactGallery runs={runs} />}
-        {dailyIsGallery && !live && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 22 }}>
-            {/* 新発見 */}
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-                <span style={{ font: "600 9.5px 'IBM Plex Mono'", color: "#d39a4e", letterSpacing: "0.5px" }}>{t("daily.perspective.discovery")}</span>
-                <div style={{ flex: 1, height: 1, background: "var(--bd)" }} />
-                <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("daily.countUnit", { count: 4 })}</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 13 }}>
-                {/* video */}
-                <div onClick={() => openArtifact({ type: "video", title: "競合UIの動向まとめ", meta: "08:02 · Scout", grad: VIDEO_GRAD, duration: "1:24" })} style={cardBase}>
-                  <div style={{ height: 96, background: VIDEO_GRAD, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                    <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <div style={{ width: 0, height: 0, borderLeft: "10px solid #fff", borderTop: "6px solid transparent", borderBottom: "6px solid transparent", marginLeft: 3 }} />
-                    </div>
-                    <span style={{ position: "absolute", right: 7, bottom: 7, font: "500 9px 'IBM Plex Mono'", color: "#cdb8ff", background: "rgba(0,0,0,.4)", padding: "2px 5px", borderRadius: 4 }}>1:24</span>
-                    <span style={cornerDot("#7c5cff")} />
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>競合UIの動向まとめ</div><div style={cardSub}>08:02 · Scout</div></div>
-                </div>
-                {/* image */}
-                <div onClick={() => openArtifact({ type: "image", title: "新着デザイン事例 12点", meta: "08:03 · Scout", imgCount: 12 })} style={cardBase}>
-                  <div style={{ height: 96, background: IMAGE_GRAD, position: "relative" }}><span style={cornerDot("#34d3e0")} /></div>
-                  <div style={cardMeta}><div style={cardTitle}>新着デザイン事例 12点</div><div style={cardSub}>08:03 · Scout</div></div>
-                </div>
-                {/* text */}
-                <div onClick={() => openArtifact({ type: "text", title: "論文サマリ: RAG最新", meta: "08:05 · Scout" })} style={cardBase}>
-                  <div style={{ height: 96, background: "var(--bg-thumb)", padding: 11, display: "flex", flexDirection: "column", gap: 4, position: "relative", overflow: "hidden" }}>
-                    <span style={{ ...cornerDot("#5b9fe8"), zIndex: 1 }} />
-                    <div style={skel("80%", 10)} /><div style={skel("95%")} /><div style={skel("70%")} /><div style={skel("88%")} />
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>論文サマリ: RAG最新</div><div style={cardSub}>08:05 · Scout</div></div>
-                </div>
-                {/* voice */}
-                <div onClick={() => openArtifact({ type: "voice", title: "音声ブリーフィング", meta: "08:06 · Scout", grad: VOICE_GRAD, duration: "0:48" })} style={cardBase}>
-                  <div style={{ height: 96, background: VOICE_GRAD, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, position: "relative" }}>
-                    <span style={cornerDot("#e0a83e")} />
-                    {CARD_WAVE.map((h, i) => <div key={i} style={{ width: 3, height: h, background: "#e0a83e", borderRadius: 2 }} />)}
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>音声ブリーフィング</div><div style={cardSub}>08:06 · Scout · 0:48</div></div>
-                </div>
-              </div>
-            </div>
-
-            {/* 最適化 */}
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-                <span style={{ font: "600 9.5px 'IBM Plex Mono'", color: "#5b9fe8", letterSpacing: "0.5px" }}>{t("daily.perspective.contextOpt")}</span>
-                <span style={{ font: "500 8.5px 'IBM Plex Mono'", color: "#d39a4e", background: "var(--tint-amber)", padding: "2px 6px", borderRadius: 4 }}>{t("daily.hasReview")}</span>
-                <div style={{ flex: 1, height: 1, background: "var(--bd)" }} />
-                <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("daily.countUnit", { count: 3 })}</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 13 }}>
-                <div onClick={() => openArtifact({ type: "text", title: "システムプロンプト改稿案", meta: "18:00 · Tuner · −24% tok" })} style={{ ...cardBase, background: "var(--tint-active)", border: "1px solid var(--tint-active-bd)" }}>
-                  <div style={{ height: 96, background: "var(--bg-thumb)", padding: 11, display: "flex", flexDirection: "column", gap: 4, position: "relative" }}>
-                    <span style={cornerDot("#5b9fe8")} />
-                    <span style={{ position: "absolute", right: 7, top: 7, font: "500 8.5px 'IBM Plex Mono'", color: "var(--ac)", background: "var(--tint-accent)", padding: "2px 5px", borderRadius: 4 }}>{t("daily.needsReview")}</span>
-                    <div style={skel("78%", 14)} /><div style={skel("90%")} /><div style={skel("62%")} />
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>システムプロンプト改稿案</div><div style={cardSub}>18:00 · Tuner · −24% tok</div></div>
-                </div>
-                <div onClick={() => openArtifact({ type: "text", title: "履歴要約スナップショット", meta: "18:01 · Tuner" })} style={cardBase}>
-                  <div style={{ height: 96, background: "var(--bg-thumb)", padding: 11, display: "flex", flexDirection: "column", gap: 4, position: "relative" }}>
-                    <span style={cornerDot("#5b9fe8")} />
-                    <div style={skel("85%", 10)} /><div style={skel("70%")} /><div style={skel("92%")} /><div style={skel("55%")} />
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>履歴要約スナップショット</div><div style={cardSub}>18:01 · Tuner</div></div>
-                </div>
-                <div onClick={() => openArtifact({ type: "image", title: "RAGヒット率レポート", meta: "18:02 · Tuner", imgCount: 5 })} style={cardBase}>
-                  <div style={{ height: 96, background: "var(--bg-thumb)", padding: 11, display: "flex", alignItems: "flex-end", gap: 4, position: "relative" }}>
-                    <span style={cornerDot("#34d3e0")} />
-                    {[40, 65, 48, 80, 30].map((h, i) => <div key={i} style={{ flex: 1, height: `${h}%`, background: i > 1 && i < 4 ? "#234a4f" : "#1d2f3a", borderRadius: 2 }} />)}
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>RAGヒット率レポート</div><div style={cardSub}>18:02 · Tuner</div></div>
-                </div>
-              </div>
-            </div>
-
-            {/* 自動化 */}
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-                <span style={{ font: "600 9.5px 'IBM Plex Mono'", color: "#5fbf95", letterSpacing: "0.5px" }}>{t("daily.perspective.automation")}</span>
-                <div style={{ flex: 1, height: 1, background: "var(--bd)" }} />
-                <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("daily.countUnit", { count: 4 })}</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 13 }}>
-                <div onClick={() => openArtifact({ type: "text", title: "日次レポート（配信済）", meta: "09:30 · Runner ✓" })} style={cardBase}>
-                  <div style={{ height: 96, background: "var(--bg-thumb)", padding: 11, display: "flex", flexDirection: "column", gap: 4, position: "relative" }}>
-                    <span style={cornerDot("#5b9fe8")} />
-                    <div style={skel("88%", 10)} /><div style={skel("60%")} /><div style={skel("80%")} />
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>日次レポート（配信済）</div><div style={{ ...cardSub, color: "#5fbf95" }}>09:30 · Runner ✓</div></div>
-                </div>
-                <div onClick={() => openArtifact({ type: "voice", title: "議事録 音声要約", meta: "09:31 · Runner", grad: VOICE_GRAD, duration: "1:12" })} style={cardBase}>
-                  <div style={{ height: 96, background: VOICE_GRAD, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, position: "relative" }}>
-                    <span style={cornerDot("#e0a83e")} />
-                    {CARD_WAVE_2.map((h, i) => <div key={i} style={{ width: 3, height: h, background: "#e0a83e", borderRadius: 2 }} />)}
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>議事録 音声要約</div><div style={cardSub}>09:31 · Runner · 1:12</div></div>
-                </div>
-                <div onClick={() => openArtifact({ type: "image", title: "ダッシュボード スクショ", meta: "09:32 · Runner ✓", imgCount: 4 })} style={cardBase}>
-                  <div style={{ height: 96, background: IMAGE_GRAD, position: "relative" }}><span style={cornerDot("#34d3e0")} /></div>
-                  <div style={cardMeta}><div style={cardTitle}>ダッシュボード スクショ</div><div style={{ ...cardSub, color: "#5fbf95" }}>09:32 · Runner ✓</div></div>
-                </div>
-                <div onClick={() => openArtifact({ type: "video", title: "操作リプレイ動画", meta: "09:33 · Runner ✓", grad: VIDEO_GRAD, duration: "0:36" })} style={cardBase}>
-                  <div style={{ height: 96, background: VIDEO_GRAD, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                    <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <div style={{ width: 0, height: 0, borderLeft: "10px solid #fff", borderTop: "6px solid transparent", borderBottom: "6px solid transparent", marginLeft: 3 }} />
-                    </div>
-                    <span style={cornerDot("#7c5cff")} />
-                  </div>
-                  <div style={cardMeta}><div style={cardTitle}>操作リプレイ動画</div><div style={{ ...cardSub, color: "#5fbf95" }}>09:33 · Runner ✓</div></div>
-                </div>
-              </div>
+        {/* Not connected: say why, and offer the retry. An empty calendar and a
+            failed connection look identical otherwise, and only one of them is
+            something the user can act on. */}
+        {!live && !connecting && (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "0 40px" }}>
+            <span style={{ font: "500 12px 'IBM Plex Sans'", color: "var(--tx3)", textAlign: "center" }}>
+              {t("daily.hostUnreachable")}
+            </span>
+            {liveError && (
+              <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-faint)", textAlign: "center", wordBreak: "break-all" }}>
+                {liveError}
+              </span>
+            )}
+            <div onClick={() => connectLive()} style={{ font: "500 11px 'IBM Plex Sans'", color: "var(--ac)", cursor: "pointer", padding: "6px 14px", borderRadius: 7, border: "1px solid var(--tint-active-bd)", background: "var(--tint-active)" }}>
+              {t("common.retry")}
             </div>
           </div>
         )}
+
+        {dailyIsGallery && live && <ArtifactGallery runs={runs} />}
 
         {/* calendar view */}
         {dailyIsCalendar && (
