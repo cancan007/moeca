@@ -178,3 +178,69 @@ describe("ordering", () => {
     expect(t.stages[0].queries.map((q) => q.query)).toEqual(["first", "second"]);
   });
 });
+
+describe("following a search result", () => {
+  const fetched = (source: string, extra: Partial<AccessLog> = {}) =>
+    log({
+      run: "run-1",
+      stage: "build",
+      path: "/rag/source",
+      reqBody: JSON.stringify({ source, as: "text" }),
+      respBody: JSON.stringify({ source, text: "…" }),
+      ...extra,
+    });
+
+  it("counts a fetched source as reached", () => {
+    const t = buildTrace([fetched("kon/character-bible.md")], "run-1");
+    expect(t.reached.get("kon/character-bible.md")).toBe(1);
+    expect(t.queryCount).toBe(1);
+  });
+
+  // The whole reason this matters: an image is indexed as metadata, so no
+  // search ever returns its contents. Fetching the file is the only way a run
+  // reaches a picture, and a trace blind to that would show the reference image
+  // as untouched by a run that opened it.
+  it("counts a fetched image, whose response is bytes rather than JSON", () => {
+    const t = buildTrace(
+      [
+        fetched("kon/images/dog_sitting.JPEG", {
+          reqBody: JSON.stringify({ source: "kon/images/dog_sitting.JPEG", as: "raw" }),
+          respBody: "\x89PNG\r\n\x1a\n\x00\x00",
+          respBytes: 4096,
+        }),
+      ],
+      "run-1",
+    );
+    expect(t.reached.get("kon/images/dog_sitting.JPEG")).toBe(1);
+    // Bytes that do not parse are not a truncated record: the name came from
+    // the request, which is whole.
+    expect(t.truncated).toBe(false);
+  });
+
+  it("merges searches and fetches into one stage's total", () => {
+    const t = buildTrace(
+      [
+        log({ run: "run-1", stage: "build", respBody: results(["kon/bible.md"]) }),
+        fetched("kon/bible.md"),
+        fetched("kon/images/dog.JPEG"),
+      ],
+      "run-1",
+    );
+    expect(t.stages).toHaveLength(1);
+    // Searched for it, then went and read it: the same source, reached twice.
+    expect(t.reached.get("kon/bible.md")).toBe(2);
+    expect(t.reached.get("kon/images/dog.JPEG")).toBe(1);
+    expect(t.queryCount).toBe(3);
+  });
+
+  it("records the source it followed, so the two read as one sequence", () => {
+    const t = buildTrace([fetched("kon/bible.md")], "run-1");
+    expect(t.stages[0].queries[0].query).toBe("kon/bible.md");
+  });
+
+  it("reports an uncaptured request rather than inventing an empty fetch", () => {
+    const t = buildTrace([fetched("x.md", { reqBody: undefined, reqBytes: 120 })], "run-1");
+    expect(t.reached.size).toBe(0);
+    expect(t.truncated).toBe(true);
+  });
+});

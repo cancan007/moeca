@@ -243,7 +243,7 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
             <span style={{ font: "600 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.agents.fieldTools")}</span>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
               <div onClick={() => setUseRag((v) => !v)} title={t("settings.agents.ragTip")} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", font: "500 10.5px 'IBM Plex Mono'", color: useRag ? "#06121e" : "var(--tx3)", background: useRag ? "#67c9a4" : "var(--bg-card2)", border: `1px solid ${useRag ? "#67c9a4" : "var(--bd2)"}`, borderRadius: 7, padding: "5px 10px" }}>
-                {useRag ? "✓ " : ""}RAG (rag_search)
+                {useRag ? "✓ " : ""}{t("settings.agents.ragLabel")}
               </div>
               {useRag && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }} title={t("settings.agents.knowledgeDepthTip")}>

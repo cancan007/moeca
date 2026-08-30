@@ -6,6 +6,14 @@ import type { AccessLog } from "@/lib/gateway";
 // request and the response. That is enough to say which sources came back to
 // which stage — and it is *only* enough to say that.
 //
+// Two shapes count as a retrieval, because there are two ways to reach a
+// source. A search answers with chunks and names where each came from; a fetch
+// follows one of those names and returns the document or the file itself. The
+// second is how a picture is reached at all — an image is indexed as metadata,
+// so no search will ever return its contents — and a trace that only understood
+// searches would show the reference image as never touched by a run that opened
+// it. Both are read here, from whichever end of the exchange carries the name.
+//
 // What this cannot say is what the model actually read. A stage that was handed
 // five chunks and used one leaves the same trace as a stage that used all five,
 // so every count here is an upper bound. The UI says "reached", not "read"
@@ -58,6 +66,14 @@ function isRetrieval(l: AccessLog): boolean {
   return l.service === "rag" && l.status >= 200 && l.status < 300;
 }
 
+/** isSourceFetch distinguishes following a search result from making one.
+ *
+ *  Matched on the path's tail rather than the whole path, since the gateway
+ *  prefix a run reaches the indexer under is configurable. */
+function isSourceFetch(l: AccessLog): boolean {
+  return l.path.replace(/[?#].*$/, "").endsWith("/source");
+}
+
 /** parseSources pulls the source names out of a recorded search response.
  *
  *  A capture that was cut short is reported rather than silently short: the
@@ -66,6 +82,20 @@ function isRetrieval(l: AccessLog): boolean {
  *  reached, which is the direction that produces a wrong "this group was never
  *  used" conclusion. */
 function parseSources(l: AccessLog): { sources: string[]; truncated: boolean } {
+  // A fetch names its source in the REQUEST, and that is the better place to
+  // read it from: the response is the document, which for a picture is bytes
+  // that no JSON parse will survive. Reading the request also means a fetch
+  // that returned a 200 counts as reached whichever form it asked for.
+  if (isSourceFetch(l)) {
+    try {
+      const asked = (JSON.parse(l.reqBody ?? "") as { source?: string }).source;
+      return { sources: typeof asked === "string" && asked ? [asked] : [], truncated: false };
+    } catch {
+      // The request body is small and the gateway keeps it whole, so failing
+      // here means it was not captured at all rather than cut short.
+      return { sources: [], truncated: l.reqBytes > 0 };
+    }
+  }
   const body = l.respBody ?? "";
   if (!body) {
     // Nothing captured at all. If bytes crossed the wire, content capture is
@@ -94,8 +124,13 @@ function parseSources(l: AccessLog): { sources: string[]; truncated: boolean } {
 
 function parseQuery(l: AccessLog): string {
   try {
-    const parsed = JSON.parse(l.reqBody ?? "") as { query?: string };
-    return typeof parsed.query === "string" ? parsed.query : "";
+    // A search carries a query; a fetch carries the source it is following, and
+    // recording that keeps the two legible as one sequence — searched for this,
+    // then went and read that.
+    const parsed = JSON.parse(l.reqBody ?? "") as { query?: string; source?: string };
+    if (typeof parsed.query === "string") return parsed.query;
+    if (typeof parsed.source === "string") return parsed.source;
+    return "";
   } catch {
     return "";
   }
