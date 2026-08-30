@@ -113,10 +113,12 @@ type runReq struct {
 	// debugging. It only ever narrows what is permitted.
 	Unattended bool `json:"unattended"`
 	// Groups is the run's knowledge scope: the groups its agents may retrieve
-	// through the gateway's /rag route. nil means no scope was asked for and
-	// the run uses the shared session, which searches everything; an empty
-	// slice means a run entitled to no knowledge at all. The distinction is
-	// carried all the way to the gateway, so it must not be collapsed here.
+	// through the gateway's /rag route. nil means no scope was asked for, so the
+	// run falls back to the shared session — which states no entitlement and is
+	// refused the indexer; an empty slice is the global scope, a run entitled to
+	// exactly the knowledge declared as everyone's. Both retrieve far less than
+	// everything, and they are not the same, so the distinction is carried all
+	// the way to the gateway and must not be collapsed here.
 	Groups        []string `json:"groups"`
 	MaxParallel   int      `json:"maxParallel"`
 	StopOnFailure *bool    `json:"stopOnFailure"`

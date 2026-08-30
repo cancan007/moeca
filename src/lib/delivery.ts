@@ -55,7 +55,8 @@ export interface TaskMeta {
    *  maps values stored before refs existed). */
   template: string;
   /** Knowledge this task's agents may retrieve, named as a node of the
-   *  Knowledge graph. Absent means no scope — the run searches everything. */
+   *  Knowledge graph. Absent means no scope, and such a run retrieves nothing:
+   *  the gateway refuses a session that never stated an entitlement. */
   scope?: KnowledgeScope;
 }
 

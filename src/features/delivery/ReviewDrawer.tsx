@@ -161,8 +161,8 @@ export function ReviewDrawer() {
   const [tplId, setTplId] = useState("");
   const [tplOpen, setTplOpen] = useState(false);
   // The task's knowledge scope, and the graph to pick it from. Same three
-  // states as a schedule: unset (searches everything), Global (only what is
-  // everyone's), or a node of the graph.
+  // states as a schedule: unset (retrieves nothing — no entitlement was
+  // stated), Global (only what is everyone's), or a node of the graph.
   const [scope, setScope] = useState<KnowledgeScope | undefined>(undefined);
   const [tree, setTree] = useState<{ orgs: { id: string; name: string }[]; projects: { id: string; name: string; orgId: string }[] }>({ orgs: [], projects: [] });
   useEffect(() => {

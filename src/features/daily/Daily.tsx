@@ -445,8 +445,8 @@ export function Daily() {
   // first template so a schedule is always bound to one.
   const [draftTemplateRef, setDraftTemplateRef] = useState("");
   // Knowledge scope: which part of the Knowledge graph this schedule may read.
-  // undefined means no scope was chosen, which is what every schedule had
-  // before this existed — the run searches everything.
+  // undefined means no scope was chosen, and such a run retrieves nothing: the
+  // gateway refuses a session that never stated an entitlement.
   const [draftScope, setDraftScope] = useState<KnowledgeScope | undefined>(undefined);
   const [knowledgeTree, setKnowledgeTree] = useState<{ orgs: { id: string; name: string }[]; projects: { id: string; name: string; orgId: string }[] }>({ orgs: [], projects: [] });
   useEffect(() => {
@@ -1156,8 +1156,11 @@ export function Daily() {
                   }}
                   style={{ background: "var(--bg-card2)", border: "1px solid var(--bd2)", borderRadius: 8, padding: "10px 12px", font: "500 12px 'IBM Plex Sans'", color: "var(--tx)", outline: "none" }}
                 >
-                  {/* Unset is not the same as Global: unset applies no policy
-                      at all, Global grants only what is declared everyone's. */}
+                  {/* Unset is not the same as Global, and the difference is the
+                      whole point: unset stated no entitlement and retrieves
+                      nothing, Global asks for what is declared everyone's. The
+                      default a schedule is created with must not be the widest
+                      grant available. */}
                   <option value="">{t("daily.scopeUnset")}</option>
                   <option value="global:">{t("daily.scopeGlobal")}</option>
                   {knowledgeTree.orgs.map((o) => (

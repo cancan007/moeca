@@ -32,7 +32,8 @@ export interface Schedule {
   templateRef: string; // "solo:<id>" | "static:<id>" (for the prompt-edit loop)
   runSpec?: unknown; // compiled stages DAG the host agent forwards to /run
   /** Knowledge scope: the node of the Knowledge graph this schedule may read.
-   *  Absent means no scope — the run searches everything, as it always did. */
+   *  Absent means no scope, and such a run retrieves nothing at all; reaching
+   *  the knowledge shared with everyone is the "global" scope, chosen. */
   scope?: KnowledgeScope;
 }
 
