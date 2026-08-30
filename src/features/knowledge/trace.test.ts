@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccessLog } from "@/lib/gateway";
-import { buildTrace, runIds } from "./trace";
+import { buildTrace, passagesFrom, runIds } from "./trace";
 
 function log(p: Partial<AccessLog>): AccessLog {
   return {
@@ -242,5 +242,79 @@ describe("following a search result", () => {
     const t = buildTrace([fetched("x.md", { reqBody: undefined, reqBytes: 120 })], "run-1");
     expect(t.reached.size).toBe(0);
     expect(t.truncated).toBe(true);
+  });
+});
+
+describe("passages a run received", () => {
+  it("carries the text of each hit, with the stage and query that pulled it", () => {
+    const t = buildTrace(
+      [
+        log({
+          run: "run-1",
+          stage: "plan",
+          reqBody: JSON.stringify({ query: "コンの見た目" }),
+          respBody: JSON.stringify({
+            results: [
+              { source: "kon/bible.md", text: "ネイビーのタートルネック", score: 0.81 },
+              { source: "other.md", text: "無関係", score: 0.4 },
+            ],
+          }),
+        }),
+      ],
+      "run-1",
+    );
+    const got = passagesFrom(t, "kon/bible.md");
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ stage: "plan", query: "コンの見た目", text: "ネイビーのタートルネック", score: 0.81 });
+    // Only that source's passages, not the whole response.
+    expect(passagesFrom(t, "other.md")[0].text).toBe("無関係");
+  });
+
+  // A stage handed one chunk of a long document saw one chunk. Listing the
+  // source twice because two queries returned it is the honest count.
+  it("lists a passage per query, in the order they arrived", () => {
+    const t = buildTrace(
+      [
+        log({ run: "run-1", stage: "plan", time: "2026-08-01T00:00:01Z", reqBody: JSON.stringify({ query: "first" }), respBody: JSON.stringify({ results: [{ source: "a.md", text: "one" }] }) }),
+        log({ run: "run-1", stage: "plan", time: "2026-08-01T00:00:02Z", reqBody: JSON.stringify({ query: "second" }), respBody: JSON.stringify({ results: [{ source: "a.md", text: "two" }] }) }),
+      ],
+      "run-1",
+    );
+    expect(passagesFrom(t, "a.md").map((p) => p.text)).toEqual(["one", "two"]);
+  });
+
+  // A salvaged name and a byte body both reach a source without yielding text.
+  // The source still counts as reached; there is simply nothing to read.
+  it("omits hits with no readable text while keeping them reached", () => {
+    const t = buildTrace(
+      [
+        log({
+          run: "run-1",
+          stage: "build",
+          path: "/rag/source",
+          reqBody: JSON.stringify({ source: "kon/images/dog.JPEG", as: "raw" }),
+          respBody: "\x89PNG\r\n",
+        }),
+      ],
+      "run-1",
+    );
+    expect(t.reached.get("kon/images/dog.JPEG")).toBe(1);
+    expect(passagesFrom(t, "kon/images/dog.JPEG")).toHaveLength(0);
+  });
+
+  it("returns the document a text fetch answered with", () => {
+    const t = buildTrace(
+      [
+        log({
+          run: "run-1",
+          stage: "build",
+          path: "/rag/source",
+          reqBody: JSON.stringify({ source: "kon/bible.md", as: "text" }),
+          respBody: JSON.stringify({ source: "kon/bible.md", text: "全文がここに" }),
+        }),
+      ],
+      "run-1",
+    );
+    expect(passagesFrom(t, "kon/bible.md")[0].text).toBe("全文がここに");
   });
 });

@@ -1,6 +1,8 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { shortLabel, type GraphNode, type IndexGraph, type KnowledgeGraph } from "@/lib/knowledge";
+import { rag } from "@/lib/rag";
+import type { ReceivedPassage } from "./trace";
 import { selectEdges, strokeWidth, totalPairs } from "./edges";
 import { hullPath, type Point } from "./geometry";
 import {
@@ -33,6 +35,7 @@ export function NodeMode({
   indexError,
   onReindex,
   reached,
+  passagesOf,
   drawer,
 }: {
   graph: KnowledgeGraph;
@@ -42,6 +45,10 @@ export function NodeMode({
   /** sources a trace reached. undefined = no trace; empty = reached nothing,
    *  which must still dim the canvas rather than read as "no trace". */
   reached?: Set<string>;
+  /** what the run actually received from a given source. Separate from
+   *  `reached` because reaching is a fact about the log and the passages are
+   *  what was in it — a source can be reached with nothing readable captured. */
+  passagesOf?: (source: string) => ReceivedPassage[];
   drawer?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -408,6 +415,7 @@ export function NodeMode({
         onPick={setSelected}
         onReindex={onReindex}
         traced={sel && reached ? reached.has(sel.source) : undefined}
+        passages={sel && passagesOf ? passagesOf(sel.source) : undefined}
       />
     </div>
   );
@@ -475,6 +483,43 @@ function Stat({ label, value, strong }: { label: string; value: string; strong?:
 // the canvas is a chunk boundary — a machine-chosen slice of about 1200
 // characters that frequently cuts mid-sentence — so it is not a unit anyone
 // should be editing. The path and the open action are the useful part; fix the
+/** A passage or a document, at readable size.
+ *
+ *  The inspector rail is 300px wide and a chunk is twelve hundred runes, so
+ *  everything there is a preview. This is where the actual text is read, and it
+ *  is a modal rather than a wider rail because reading is a thing you stop to
+ *  do — the canvas behind it is not what you are looking at while you do it. */
+function FullText({ title, body, onClose }: { title: string; body: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "absolute", inset: 0, background: "rgba(6,8,11,.62)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 32 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "var(--bg-panel)", border: "1px solid var(--bd)", borderRadius: 12, width: "min(760px, 100%)", maxHeight: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--bd-soft)" }}>
+          <span style={{ font: "600 11.5px 'IBM Plex Sans'", color: "var(--tx)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {title}
+          </span>
+          <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)", flex: "none" }}>
+            {t("knowledge.node.charCount", { count: body.length })}
+          </span>
+          <div onClick={onClose} style={{ cursor: "pointer", color: "var(--tx-faint)", font: "400 13px 'IBM Plex Sans'", flex: "none" }}>✕</div>
+        </div>
+        {/* pre-wrap, not a paragraph: an indexed chunk keeps the line breaks it
+            had in the file, and reflowing them would show the reader something
+            other than what was embedded. */}
+        <div style={{ padding: "14px 16px", overflowY: "auto", font: "400 11.5px 'IBM Plex Sans'", color: "var(--tx2)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {body}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // file at its source and reindex.
 function Inspector({
   node,
@@ -483,6 +528,7 @@ function Inspector({
   onPick,
   onReindex,
   traced,
+  passages,
 }: {
   node?: GraphNode;
   nodes: GraphNode[];
@@ -491,9 +537,26 @@ function Inspector({
   onReindex: () => void;
   /** undefined when no trace is active. */
   traced?: boolean;
+  /** passages this run received from this source; undefined without a trace. */
+  passages?: ReceivedPassage[];
 }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  // The indexed text, read on demand rather than with the graph: it is the one
+  // thing here big enough to be worth not loading for every node someone
+  // clicks past.
+  const [indexed, setIndexed] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const [readErr, setReadErr] = useState("");
+  const [full, setFull] = useState<{ title: string; body: string } | null>(null);
+
+  // A different node is a different document; anything loaded for the last one
+  // would otherwise sit under the new one's name.
+  useEffect(() => {
+    setIndexed(null);
+    setReadErr("");
+    setFull(null);
+  }, [node?.source]);
 
   if (!node) {
     return (
@@ -559,6 +622,86 @@ function Inspector({
           <Metric label="scope" value={node.scope ?? "project"} />
         </div>
       </div>
+
+      {/* What is actually in the index for this node, and — under a trace —
+          what the run actually received from it.
+          The two are different questions and the screen keeps them apart. The
+          passages are evidence about the run: this stage was handed this text.
+          The indexed content is evidence about the index: this is what a search
+          could ever return. Showing the document where a passage belongs would
+          overstate what informed the agent, which is the same overclaim the
+          "reached, not read" wording elsewhere exists to avoid. */}
+      <Section
+        title={t("knowledge.node.content")}
+        meta={passages && passages.length ? t("knowledge.node.passageCount", { count: passages.length }) : undefined}
+      >
+        {passages && passages.length > 0 ? (
+          passages.slice(0, 4).map((p, i) => (
+            <div
+              key={`${p.stage}-${i}`}
+              onClick={() => setFull({ title: `${p.stage} — ${p.query || t("knowledge.node.noQuery")}`, body: p.text })}
+              style={{ background: "var(--bg-card)", border: "1px solid var(--bd2)", borderRadius: 9, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 5, cursor: "pointer" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ font: "600 8.5px 'IBM Plex Mono'", color: "var(--cyan)", flex: "none" }}>{p.stage}</span>
+                <span style={{ font: "400 9px 'IBM Plex Mono'", color: "var(--tx-faint)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.query}
+                </span>
+                {typeof p.score === "number" ? (
+                  <span style={{ font: "500 8.5px 'IBM Plex Mono'", color: "var(--tx-faint)", flex: "none" }}>{p.score.toFixed(2)}</span>
+                ) : null}
+              </div>
+              <span style={{ font: "400 10px 'IBM Plex Sans'", color: "var(--tx3)", lineHeight: 1.6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                {p.text}
+              </span>
+            </div>
+          ))
+        ) : passages ? (
+          <span style={{ font: "400 10.5px 'IBM Plex Sans'", color: "var(--tx-dim)", lineHeight: 1.7 }}>
+            {traced ? t("knowledge.node.reachedNoText") : t("knowledge.node.noPassages")}
+          </span>
+        ) : null}
+        {passages && passages.length > 4 ? (
+          <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>
+            {t("knowledge.node.morePassages", { count: passages.length - 4 })}
+          </span>
+        ) : null}
+
+        {/* The index's own copy, on request. For an image this is the whole
+            reason to ask: it has no text of its own, so the descriptor and the
+            caption are all there is to read. */}
+        {indexed === null ? (
+          <Button
+            disabled={reading}
+            onClick={async () => {
+              setReading(true);
+              setReadErr("");
+              try {
+                setIndexed((await rag.source(node.source)).text);
+              } catch (e) {
+                setReadErr(e instanceof Error ? e.message : String(e));
+              } finally {
+                setReading(false);
+              }
+            }}
+          >
+            {reading ? t("common.loading") : t("knowledge.node.showIndexed")}
+          </Button>
+        ) : (
+          <div
+            onClick={() => setFull({ title: t("knowledge.node.indexedTitle", { source: shortLabel(node.source) }), body: indexed })}
+            style={{ background: "var(--bg-deep)", border: "1px solid var(--bd2)", borderRadius: 9, padding: "8px 10px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 5 }}
+          >
+            <span style={{ ...railHeading, fontSize: 8.5 }}>{t("knowledge.node.indexedLabel")}</span>
+            <span style={{ font: "400 10px 'IBM Plex Sans'", color: "var(--tx3)", lineHeight: 1.6, display: "-webkit-box", WebkitLineClamp: 6, WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "pre-wrap" }}>
+              {indexed.trim() || t("knowledge.node.indexedEmpty")}
+            </span>
+          </div>
+        )}
+        {readErr ? <Notice tone="error">{readErr}</Notice> : null}
+      </Section>
+
+      {full ? <FullText title={full.title} body={full.body} onClose={() => setFull(null)} /> : null}
 
       <Section title={t("knowledge.node.memberGroups")} meta={groups.length ? `${groups.length}` : t("common.none")}>
         {groups.length === 0 ? (

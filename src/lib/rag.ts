@@ -114,6 +114,21 @@ export const rag = {
     return { ...s, sources: s.sources ?? [] };
   },
   reindex: () => req<{ status: string }>("/index", { method: "POST" }),
+  /** What the index holds for one source, as text.
+   *
+   *  The host-facing side of the route agents reach through the gateway. No
+   *  groups header, so no filter — this is the management plane, which already
+   *  enumerates every source through /status and /graph.
+   *
+   *  For an image this returns the descriptor, plus the model's description
+   *  when captioning is on. That is the whole point of asking: an image has no
+   *  text of its own, so what the index knows about it is the only thing there
+   *  is to read. */
+  source: (path: string) =>
+    req<{ source: string; text: string }>("/source", {
+      method: "POST",
+      body: JSON.stringify({ source: path, as: "text" }),
+    }),
   // Direct test search (UI only). Agents search via the gateway's /rag route.
   async search(query: string, k = 5): Promise<{ results: RagResult[] }> {
     const r = await req<{ results: RagResult[] }>("/search", { method: "POST", body: JSON.stringify({ query, k }) });

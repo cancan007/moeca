@@ -21,12 +21,26 @@ import type { AccessLog } from "@/lib/gateway";
 // decide a group is unnecessary: an unreached group is provably unused, while a
 // reached one is only possibly useful.
 
+/** One passage that came back, as the gateway recorded it.
+ *
+ *  This is the text the stage actually received — not the source's contents,
+ *  which is a different and larger thing. A screen asking "what did this run
+ *  see" wants the former; the index can always be read for the latter. */
+export interface TraceHit {
+  source: string;
+  text: string;
+  score?: number;
+}
+
 /** One retrieval, as the gateway saw it. */
 export interface TraceQuery {
   requestId: string;
   time: string;
   query: string;
   sources: string[];
+  /** what came back, with its text. Same order and length as `sources` when the
+   *  capture was whole; a salvaged one may carry names without their passages. */
+  hits: TraceHit[];
   /** the recorded response was cut short, so `sources` is incomplete. */
   truncated: boolean;
 }
@@ -81,7 +95,7 @@ function isSourceFetch(l: AccessLog): boolean {
  *  tail. Reading a truncated list as complete would understate what a stage
  *  reached, which is the direction that produces a wrong "this group was never
  *  used" conclusion. */
-function parseSources(l: AccessLog): { sources: string[]; truncated: boolean } {
+function parseSources(l: AccessLog): { hits: TraceHit[]; truncated: boolean } {
   // A fetch names its source in the REQUEST, and that is the better place to
   // read it from: the response is the document, which for a picture is bytes
   // that no JSON parse will survive. Reading the request also means a fetch
@@ -89,36 +103,49 @@ function parseSources(l: AccessLog): { sources: string[]; truncated: boolean } {
   if (isSourceFetch(l)) {
     try {
       const asked = (JSON.parse(l.reqBody ?? "") as { source?: string }).source;
-      return { sources: typeof asked === "string" && asked ? [asked] : [], truncated: false };
+      if (typeof asked !== "string" || !asked) return { hits: [], truncated: false };
+      // The text form answers with the document; the raw form answers with
+      // bytes, which are not a passage and are left empty rather than shown as
+      // mojibake. Either way the source was reached.
+      let text = "";
+      try {
+        const got = JSON.parse(l.respBody ?? "") as { text?: string };
+        if (typeof got.text === "string") text = got.text;
+      } catch {
+        text = "";
+      }
+      return { hits: [{ source: asked, text }], truncated: false };
     } catch {
       // The request body is small and the gateway keeps it whole, so failing
       // here means it was not captured at all rather than cut short.
-      return { sources: [], truncated: l.reqBytes > 0 };
+      return { hits: [], truncated: l.reqBytes > 0 };
     }
   }
   const body = l.respBody ?? "";
   if (!body) {
     // Nothing captured at all. If bytes crossed the wire, content capture is
     // off or the body was dropped; either way the sources are unknown.
-    return { sources: [], truncated: l.respBytes > 0 };
+    return { hits: [], truncated: l.respBytes > 0 };
   }
   // respBytes counts what the upstream actually sent; a shorter capture means
   // the record is partial even when it happens to still parse.
   const short = l.respBytes > 0 && body.length < l.respBytes;
   try {
-    const parsed = JSON.parse(body) as { results?: { source?: string }[] };
-    const sources = (parsed.results ?? [])
-      .map((r) => r.source)
-      .filter((s): s is string => typeof s === "string" && s.length > 0);
-    return { sources, truncated: short };
+    const parsed = JSON.parse(body) as { results?: { source?: string; text?: string; score?: number }[] };
+    const hits = (parsed.results ?? [])
+      .filter((r): r is { source: string; text?: string; score?: number } =>
+        typeof r.source === "string" && r.source.length > 0)
+      .map((r) => ({ source: r.source, text: typeof r.text === "string" ? r.text : "", score: r.score }));
+    return { hits, truncated: short };
   } catch {
     // Truncated JSON is the common case here, and the salvage is worth doing:
     // the sources that survived are real, and reporting none of them would
-    // look exactly like a stage that retrieved nothing.
+    // look exactly like a stage that retrieved nothing. Only the names survive
+    // this — a passage cut mid-string is not one.
     const found = [...body.matchAll(/"source"\s*:\s*"((?:[^"\\]|\\.)*)"/g)].map((m) =>
       m[1].replace(/\\(.)/g, "$1"),
     );
-    return { sources: found, truncated: true };
+    return { hits: found.map((source) => ({ source, text: "" })), truncated: true };
   }
 }
 
@@ -176,12 +203,14 @@ export function buildTrace(logs: AccessLog[], run: string): Trace {
       byId.set(id, stage);
       stages.push(stage);
     }
-    const { sources, truncated: cut } = parseSources(l);
+    const { hits, truncated: cut } = parseSources(l);
+    const sources = hits.map((h) => h.source);
     stage.queries.push({
       requestId: l.requestId,
       time: l.time,
       query: parseQuery(l),
       sources,
+      hits,
       truncated: cut,
     });
     queryCount++;
@@ -195,6 +224,39 @@ export function buildTrace(logs: AccessLog[], run: string): Trace {
     }
   }
   return { run, stages, reached, queryCount, truncated };
+}
+
+/** One passage a run received, with where it came from in the run. */
+export interface ReceivedPassage {
+  stage: string;
+  query: string;
+  text: string;
+  score?: number;
+}
+
+/** passagesFrom collects what a run actually received from one source.
+ *
+ *  This is the honest answer to "what did the agent see": the passages the
+ *  gateway recorded coming back, in the order they arrived, each with the stage
+ *  and the query that pulled it. It is deliberately NOT the source's contents —
+ *  a stage handed one chunk of a long document saw one chunk, and showing the
+ *  document would overstate what informed it.
+ *
+ *  Passages with no text are dropped rather than listed empty: they are a
+ *  salvaged name from a truncated capture, or the byte body of a file fetch,
+ *  and neither is something a reader can be shown. The source still counts as
+ *  reached — that comes from `reached`, not from here. */
+export function passagesFrom(trace: Trace, source: string): ReceivedPassage[] {
+  const out: ReceivedPassage[] = [];
+  for (const stage of trace.stages) {
+    for (const q of stage.queries) {
+      for (const h of q.hits) {
+        if (h.source !== source || !h.text.trim()) continue;
+        out.push({ stage: stage.id, query: q.query, text: h.text, score: h.score });
+      }
+    }
+  }
+  return out;
 }
 
 /** runIds lists the runs present in the log, most recent first, so the screen

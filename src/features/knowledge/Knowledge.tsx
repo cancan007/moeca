@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { rag } from "@/lib/rag";
 import { useStore } from "@/store/useStore";
@@ -9,6 +9,7 @@ import { PromptDrawer } from "./PromptDrawer";
 import { TraceBar } from "./TraceBar";
 import { Notice, pillStyle } from "./ui";
 import { useKnowledge } from "./useKnowledge";
+import { passagesFrom } from "./trace";
 import { useTrace } from "./useTrace";
 
 // The Knowledge screen.
@@ -71,6 +72,15 @@ export function Knowledge() {
     // A one-stage run is a solo template, where the stage carries the role.
     return solos.find((x) => x.id === stage?.role || x.name === stage?.name);
   }, [stageFilter, stages, staticTpls, solos]);
+
+  // What the run received from a given source, for the node inspector. Passed as
+  // a lookup rather than a prepared map: only the selected node's passages are
+  // ever shown, and building one entry per reached source would be work for
+  // every node the user clicks past.
+  const passagesOf = useCallback(
+    (source: string) => passagesFrom(trace, source),
+    [trace],
+  );
 
   const usedBy = useMemo(
     () =>
@@ -213,6 +223,7 @@ export function Knowledge() {
           indexError={indexError}
           onReindex={reindex}
           reached={reached}
+          passagesOf={runId ? passagesOf : undefined}
           drawer={
             drawerOpen ? (
               <PromptDrawer
