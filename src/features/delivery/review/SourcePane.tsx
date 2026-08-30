@@ -4,15 +4,6 @@ import type { DeliveryTask } from "@/store/useStore";
 import { useStore } from "@/store/useStore";
 import { hostagent } from "@/lib/hostagent";
 
-const mockInitial = `async function rebuildIndex() {
-  const docs = await db.fetchAll();
-  const batched = chunk(docs, 500);
-  for (const part of batched) {
-    await index.bulk(part);
-  }
-  await db.commit();
-}`;
-
 export function SourcePane({ task, onOpenWorkspace }: { task: DeliveryTask; onOpenWorkspace: () => void }) {
   const { t } = useTranslation();
   const live = !!task.live;
@@ -22,8 +13,8 @@ export function SourcePane({ task, onOpenWorkspace }: { task: DeliveryTask; onOp
 
   const [files, setFiles] = useState<string[]>([]);
   const [path, setPath] = useState<string>("");
-  const [orig, setOrig] = useState<string>(live ? "" : mockInitial);
-  const [src, setSrc] = useState<string>(live ? "" : mockInitial);
+  const [orig, setOrig] = useState<string>("");
+  const [src, setSrc] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);

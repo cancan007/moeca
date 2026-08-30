@@ -18,7 +18,9 @@ export type Theme = "dark" | "light";
 export type DeliveryStatus = "inbox" | "working" | "done";
 export type CI = "none" | "passed" | "running" | "failed";
 export type ReviewTab = "task" | "diff" | "source" | "artifacts" | "evidence";
-export type Source = "mock" | "live";
+/** Where the task list comes from. "offline" means the host agent has not
+ *  answered — there is no demo data behind it, so the screen says so. */
+export type Source = "offline" | "live";
 
 export interface Pipeline {
   name: string;
@@ -275,53 +277,6 @@ export const PIPELINES: Pipeline[] = [
   { name: "Solo — Docs", steps: "単体 · 1 agent", color: "#e0a83e" },
 ];
 
-const g = (b: boolean) => b;
-
-export const initialTasks: DeliveryTask[] = [
-  {
-    id: "WEB-241", title: "決済リトライ処理の追加", project: "acme/web-app",
-    branch: "feat/retry", target: "release/2.4", worktree: "wt-3a1f", agent: "Builder", agentGradient: g(true),
-    add: "+142", del: "−38", files: 3, ci: "passed", status: "inbox", active: true, review: false,
-    pipeline: PIPELINES[1], evidence: "api",
-  },
-  {
-    id: "API-88", title: "Rate limit middleware", project: "acme/api",
-    branch: "feat/ratelimit", target: "main", worktree: "wt-9c02", agent: "Coder", agentGradient: g(false),
-    add: "+88", del: "−12", files: 2, ci: "running", status: "inbox", active: false, review: false,
-    pipeline: PIPELINES[0], evidence: "api",
-  },
-  {
-    id: "WEB-233", title: "フォーム検証の刷新", project: "acme/web-app",
-    branch: "feat/forms", target: "main", worktree: "wt-1b7d", agent: "Coder", agentGradient: g(false),
-    add: "+64", del: "−9", files: 4, ci: "passed", status: "inbox", active: false, review: false,
-    pipeline: PIPELINES[2], evidence: "vrt",
-  },
-  {
-    id: "WEB-219", title: "検索インデックスの再構築", project: "acme/web-app",
-    branch: "fix/index", target: "main", worktree: "wt-77ac", agent: "Builder", agentGradient: g(true),
-    add: "+311", del: "−96", files: 7, ci: "passed", status: "working", active: true, review: true,
-    pipeline: PIPELINES[1], evidence: "vrt",
-  },
-  {
-    id: "API-72", title: "Webhook 署名検証", project: "acme/api",
-    branch: "feat/webhook-sig", target: "main", worktree: "wt-4d51", agent: "Reviewer", agentGradient: g(false),
-    add: "+53", del: "−4", files: 2, ci: "failed", status: "working", active: false, review: true,
-    pipeline: PIPELINES[3], evidence: "api",
-  },
-  {
-    id: "INF-12", title: "CIキャッシュの最適化", project: "acme/infra",
-    branch: "merged", target: "main", worktree: "wt-2200", agent: "Coder", agentGradient: g(false),
-    add: "+40", del: "−120", files: 5, ci: "passed", status: "done", active: false, review: false,
-    pipeline: PIPELINES[0], evidence: "api", merged: "merged → main",
-  },
-  {
-    id: "DOC-5", title: "APIリファレンス自動生成", project: "acme/docs",
-    branch: "merged", target: "release/2.4", worktree: "wt-0f9a", agent: "Builder", agentGradient: g(true),
-    add: "+890", del: "−12", files: 14, ci: "passed", status: "done", active: false, review: false,
-    pipeline: PIPELINES[4], evidence: "vrt", merged: "merged → release/2.4",
-  },
-];
-
 const initialNotifs: NotifItem[] = [
   { id: "n1", kind: "ci", title: "検索インデックスの再構築 — CI 5/5 合格", detail: "セルフレビュー解禁 · web-app", time: "2分前", read: false },
   { id: "n2", kind: "ci", title: "Webhook 署名検証 — CI 失敗", detail: "typecheck 2 errors · api", time: "8分前", read: false },
@@ -360,7 +315,7 @@ export const useStore = create<State>((set) => ({
       ].slice(0, 50),
     })),
 
-  tasks: initialTasks,
+  tasks: [],
   moveTask: (id, status) => set((s) => ({ tasks: s.tasks.map((t) => (t.id === id ? { ...t, status } : t)) })),
 
   reviewId: null,
@@ -369,7 +324,7 @@ export const useStore = create<State>((set) => ({
   closeReview: () => set({ reviewId: null }),
   setReviewTab: (t) => set({ reviewTab: t }),
 
-  source: "mock",
+  source: "offline",
   connecting: false,
   liveError: null,
   connectHostAgent: async () => {
@@ -384,10 +339,12 @@ export const useStore = create<State>((set) => ({
     }
   },
   autoConnectHostAgent: async () => {
-    // One-shot best-effort connect at startup so Delivery/Daily aren't stuck on
-    // mock data when the host agent is available. Retries briefly (the sidecar
-    // may still be coming up), stays mock silently if it never responds (no
-    // scary liveError), and never overrides a manual toggle already in flight.
+    // One-shot connect at startup. Retries briefly because the sidecar may still
+    // be coming up, and never overrides a manual toggle already in flight.
+    //
+    // If it never answers, the error is left standing rather than swallowed:
+    // there is no demo data to fall back to, and a screen that is empty because
+    // nothing is running should say which of those two it is.
     if (useStore.getState().source === "live" || useStore.getState().connecting) return;
     for (let i = 0; i < 5; i++) {
       try {
@@ -401,8 +358,12 @@ export const useStore = create<State>((set) => ({
       if (useStore.getState().source === "live") return; // a manual connect won the race
       await new Promise((r) => setTimeout(r, 800));
     }
+    // Out of attempts. Say so, so the empty screen has a reason attached to it.
+    if (useStore.getState().source !== "live") {
+      set({ liveError: "host agent did not respond on 127.0.0.1:8788" });
+    }
   },
-  disconnectHostAgent: () => set({ tasks: initialTasks, source: "mock", liveError: null }),
+  disconnectHostAgent: () => set({ tasks: [], source: "offline", liveError: null }),
   refreshLive: async () => {
     const st = useStore.getState();
     if (st.source !== "live") return;

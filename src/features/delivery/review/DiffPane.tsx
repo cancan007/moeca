@@ -8,23 +8,6 @@ type Row =
   | { k: "add"; n: number; text: string }
   | { k: "del"; text: string };
 
-const demoRows: Row[] = [
-  { k: "hunk", text: "@@ -18,7 +18,12 @@ async function rebuildIndex()" },
-  { k: "ctx", n: 18, text: "  const docs = await db.fetchAll();" },
-  { k: "add", n: 19, text: "+ const batched = chunk(docs, 500);" },
-  { k: "add", n: 20, text: "+ for (const part of batched) {" },
-  { k: "add", n: 21, text: "+   await index.bulk(part);" },
-  { k: "del", text: "- await index.bulk(docs);" },
-  { k: "add", n: 22, text: "+ }" },
-  { k: "ctx", n: 23, text: "  await db.commit();" },
-  { k: "ctx", n: 24, text: "}" },
-  { k: "hunk", text: "@@ -41,3 +46,8 @@ export function chunk()" },
-  { k: "add", n: 46, text: "+ export function chunk(a, n) {" },
-  { k: "add", n: 47, text: "+   const out = [];" },
-  { k: "add", n: 48, text: "+   for (let i=0;i<a.length;i+=n) out.push(a.slice(i,i+n));" },
-  { k: "add", n: 49, text: "+   return out;" },
-  { k: "add", n: 50, text: "+ }" },
-];
 
 const gutter: React.CSSProperties = { width: 44, textAlign: "right", paddingRight: 14, flex: "none" };
 
@@ -89,8 +72,9 @@ function FileTabs({ names, active, onPick, extra }: { names: string[]; active: n
   );
 }
 
-/** DiffPane renders real host-agent diff files when `files` is provided,
- *  otherwise the demo diff (mock mode). */
+/** DiffPane renders the host agent's diff for a task. `files` is undefined
+ *  while it is still loading and empty when the branch has no changes — two
+ *  different things, and the pane says which. */
 export function DiffPane({ files }: { files?: DiffFile[] }) {
   const { t } = useTranslation();
   const [active, setActive] = useState(0);
@@ -106,14 +90,6 @@ export function DiffPane({ files }: { files?: DiffFile[] }) {
     );
   }
 
-  if (files && files.length === 0) {
-    return <div style={{ padding: "40px 16px", textAlign: "center", font: "400 12px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>{t("review.noDiff")}</div>;
-  }
-
-  return (
-    <>
-      <FileTabs names={["indexer.ts", "schema.sql", "worker.ts"]} active={0} onPick={() => {}} extra="+4" />
-      <DiffRows rows={demoRows} />
-    </>
-  );
+  const note = files ? t("review.noDiff") : t("common.loading");
+  return <div style={{ padding: "40px 16px", textAlign: "center", font: "400 12px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>{note}</div>;
 }

@@ -42,6 +42,31 @@ function Column({ status, label, sub, dotColor }: { status: DeliveryStatus; labe
   );
 }
 
+function NotConnected() {
+  const { t } = useTranslation();
+  const connecting = useStore((s) => s.connecting);
+  const liveError = useStore((s) => s.liveError);
+  const connect = useStore((s) => s.connectHostAgent);
+  if (connecting) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", font: "500 12px 'IBM Plex Sans'", color: "var(--tx3)" }}>
+        {t("daily.connecting")}
+      </div>
+    );
+  }
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "0 40px" }}>
+      <span style={{ font: "500 12px 'IBM Plex Sans'", color: "var(--tx3)", textAlign: "center" }}>{t("daily.hostUnreachable")}</span>
+      {liveError && (
+        <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-faint)", textAlign: "center", wordBreak: "break-all" }}>{liveError}</span>
+      )}
+      <div onClick={() => connect()} style={{ font: "500 11px 'IBM Plex Sans'", color: "var(--ac)", cursor: "pointer", padding: "6px 14px", borderRadius: 7, border: "1px solid var(--tint-active-bd)", background: "var(--tint-active)" }}>
+        {t("common.retry")}
+      </div>
+    </div>
+  );
+}
+
 function LiveToggle() {
   const { t } = useTranslation();
   const source = useStore((s) => s.source);
@@ -63,7 +88,7 @@ function LiveToggle() {
     >
       <span className={live ? "oc-active-dot" : undefined} style={{ width: 7, height: 7, borderRadius: "50%", background: live ? "var(--green)" : liveError ? "var(--red)" : "var(--tx-dim)" }} />
       <span style={{ font: "500 11px 'IBM Plex Mono'", color: live ? "#67c9a4" : liveError ? "var(--red)" : "var(--tx3)" }}>
-        {connecting ? t("daily.connecting") : live ? "live · host agent" : "mock data"}
+        {connecting ? t("daily.connecting") : live ? "host agent" : t("daily.hostRetry")}
       </span>
     </div>
   );
@@ -484,11 +509,17 @@ export function Delivery() {
           <div style={{ font: "500 11px 'IBM Plex Sans'", color: "var(--tx3)", padding: "5px 11px", border: "1px solid var(--bd2)", borderRadius: 7 }}>Board</div>
           <div style={{ font: "500 11px 'IBM Plex Sans'", color: "var(--tx-dim)", padding: "5px 11px" }}>List</div>
         </div>
-        <div style={{ flex: 1, display: "flex", gap: 14, padding: "16px 18px", overflow: "hidden" }}>
-          <Column status="inbox" label={t("delivery.inbox")} sub="inbox" dotColor="var(--amber)" />
-          <Column status="working" label={t("delivery.working")} sub="working" dotColor="var(--ac)" />
-          <Column status="done" label={t("delivery.done")} sub="done" dotColor="var(--green)" />
-        </div>
+        {/* Three empty columns and a failed connection look identical. Only one
+            of them is something the user can act on, so say which this is. */}
+        {!live ? (
+          <NotConnected />
+        ) : (
+          <div style={{ flex: 1, display: "flex", gap: 14, padding: "16px 18px", overflow: "hidden" }}>
+            <Column status="inbox" label={t("delivery.inbox")} sub="inbox" dotColor="var(--amber)" />
+            <Column status="working" label={t("delivery.working")} sub="working" dotColor="var(--ac)" />
+            <Column status="done" label={t("delivery.done")} sub="done" dotColor="var(--green)" />
+          </div>
+        )}
       </div>
 
       <ReviewDrawer />
