@@ -28,6 +28,12 @@ const AdminHeader = "X-Orchestra-Admin"
 // header tells the upstream "no policy", whereas an empty one would tell it
 // "this caller is entitled to nothing". Both are meaningful and they are
 // opposites, so the absent case cannot be expressed as an empty string.
+//
+// In practice that branch is unreachable for a knowledge-scoped service: the
+// proxy handler rejects a nil-groups session before it ever gets here, because
+// "no policy" reaching the indexer is the fail-open this whole path exists to
+// prevent. It stays because the meaning of nil belongs with the substitution,
+// and a future upstream may read an absent header differently.
 func (g *Gateway) resolveInject(provider, tmpl string, groups []string) (value string, send bool) {
 	if strings.Contains(tmpl, "${SECRET}") {
 		sec, _ := g.reg.secret(provider)

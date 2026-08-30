@@ -24,12 +24,16 @@ import (
 //	                exactly the knowledge declared as everyone's.
 //	organization  → the groups serving any project of that organization.
 //	project       → the groups serving that project.
-//	(unset)       → nil. No policy at all: the run searches everything, which
-//	                is what every schedule did before scopes existed.
+//	(unset)       → nil. No entitlement was stated, and the gateway refuses
+//	                retrieval outright: a schedule that never chose a scope
+//	                reads no knowledge. It is the default a task is created
+//	                with, so it is the one that must not be the widest grant.
 //
 // Nil and empty are different answers and stay different all the way to the
-// gateway: nil omits the header, empty sends it empty. Collapsing them would
-// turn "entitled to nothing" into "entitled to everything".
+// gateway: nil is refused there, empty sends the header empty and retrieves the
+// knowledge declared as everyone's. Collapsing them would turn "nobody chose"
+// into "entitled to everything", which is the one default worth being careful
+// about — it is the state every task starts in.
 
 // scopeGroups returns the groups a scope grants. The bool reports whether a
 // policy applies at all; false means an unscoped run.

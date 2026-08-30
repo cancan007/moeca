@@ -26,8 +26,9 @@ import (
 // redirect them. Minting here keeps the admin token off the sandbox and out of
 // the webview, which is the property that matters.
 //
-// A run without groups mints nothing and uses the shared session, which is what
-// every run did before this existed.
+// A run without groups mints nothing and uses the shared session. That session
+// states no entitlement, and the gateway refuses knowledge retrieval to one that
+// does not — so an unscoped run reads no knowledge rather than all of it.
 
 const (
 	adminSessionsPath = "/_gateway/sessions"

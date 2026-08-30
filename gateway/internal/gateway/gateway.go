@@ -152,6 +152,38 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2b. knowledge retrieval is closed by default, twice over: a service that
+	// enforces knowledge permissions is reachable only by a caller the gateway
+	// can name, and only by one whose entitlement was stated.
+	//
+	// The anonymous fallback exists so a developer can run the stack with no
+	// sessions configured, and for a model or tool upstream that is harmless.
+	// For the indexer it is not, so the convenience stops here.
+	if svc.ScopesKnowledge() {
+		if session == AnonymousSession {
+			g.log.write(accessLog{RequestID: requestID(), Session: session, Service: name, Method: r.Method, Path: r.URL.Path, Status: http.StatusUnauthorized, Err: "session_required"})
+			writeJSON(w, http.StatusUnauthorized, errBody("knowledge retrieval requires a session; this service is not open to anonymous callers"))
+			return
+		}
+		// nil groups is a session that never said what it may read. It used to
+		// mean "no policy, search everything", which made forgetting to choose a
+		// scope the most permissive thing a task could do — the default was also
+		// the widest grant. Now it means the opposite: nothing was granted, so
+		// nothing is retrievable, and reaching the whole index is something a
+		// person has to ask for.
+		//
+		// Asking for it is exactly what the global scope is. It resolves to an
+		// EMPTY group list, which is a stated entitlement and passes here, and
+		// the indexer answers it with the knowledge declared as everyone's. That
+		// is the distinction nil-versus-empty has been carrying all along; this
+		// is the point where it finally decides something.
+		if groups == nil {
+			g.log.write(accessLog{RequestID: requestID(), Session: session, Service: name, Method: r.Method, Path: r.URL.Path, Status: http.StatusForbidden, Err: "scope_required"})
+			writeJSON(w, http.StatusForbidden, errBody("this run has no knowledge scope, so it may not retrieve; choose one on the task (Global for knowledge shared with everyone)"))
+			return
+		}
+	}
+
 	key := session + "|" + name
 
 	// 3. body-size limit
@@ -430,33 +462,44 @@ func extractModel(b []byte) string {
 	return ""
 }
 
+// AnonymousSession is the id given to a caller that presents no token at all,
+// in a configuration that defines no sessions. It is the local-development
+// convenience and nothing else: it carries no group policy, and services that
+// enforce knowledge permissions refuse it.
+const AnonymousSession = "anonymous"
+
 // authenticate returns the session id and its knowledge groups for a valid
-// token. When no sessions are configured, an anonymous session is allowed
-// (local dev) with no group policy.
+// token. When no sessions are configured and no token is presented, an
+// anonymous session is allowed (local dev) with no group policy.
 func (g *Gateway) authenticate(r *http.Request) (id string, groups []string, ok bool) {
 	tok := r.Header.Get(SessionHeader)
-	// A session minted for one run wins over the static ones: it is the only
-	// place a per-run retrieval scope can come from, and it must work even in a
-	// configuration that defines no static sessions at all.
 	if tok != "" {
+		// A session minted for one run wins over the static ones: it is the only
+		// place a per-run retrieval scope can come from, and it must work even in
+		// a configuration that defines no static sessions at all.
 		if s, found := g.sessions.get(tok); found {
 			if s.ID != "" {
 				return s.ID, s.Groups, true
 			}
 			return "run", s.Groups, true
 		}
-	}
-	if len(g.cfg.Sessions) == 0 {
-		return "anonymous", nil, true
-	}
-	if tok == "" {
+		if s, found := g.cfg.Sessions[tok]; found {
+			if s.ID != "" {
+				return s.ID, s.Groups, true
+			}
+			return "session", s.Groups, true
+		}
+		// A token the gateway does not know is a failed authentication, never an
+		// anonymous one. Falling through to the dev fallback below would turn an
+		// expired run session — and every minted token expires when the gateway
+		// restarts — into a caller with no group policy at all, which the
+		// indexer reads as "search everything". The one case the fallback is for
+		// is a caller presenting nothing; presenting a token that is not ours is
+		// a different thing and fails.
 		return "", nil, false
 	}
-	if s, found := g.cfg.Sessions[tok]; found {
-		if s.ID != "" {
-			return s.ID, s.Groups, true
-		}
-		return "session", s.Groups, true
+	if len(g.cfg.Sessions) == 0 {
+		return AnonymousSession, nil, true
 	}
 	return "", nil, false
 }

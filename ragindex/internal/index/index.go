@@ -64,8 +64,10 @@ const (
 	KindExternal = "external"
 
 	// ScopeGlobal is the default: knowledge every task may retrieve, whatever
-	// groups its run was granted. The narrower scopes below are subject to the
-	// group filter; global is not.
+	// groups its run was granted — for as long as it belongs to no group.
+	// Assigning a source to a group is what narrows it, so the scope a source is
+	// actually reachable under is derived rather than declared twice. See
+	// permits in groups.go and effectiveScope in membership.go.
 	ScopeGlobal       = "global"
 	ScopeProject      = "project"
 	ScopeOrganization = "organization"
@@ -84,8 +86,8 @@ type SourceSpec struct {
 	Name  string `json:"name"`  // optional display label
 	// Groups are permission labels; a scoped search sees this source only if it
 	// permits one of them. A source with no groups is visible to unscoped
-	// searches only — unless its scope is global, which bypasses the filter
-	// entirely. See groups.go.
+	// searches only — unless its scope is global, in which case being in no
+	// group is precisely what keeps it everyone's. See groups.go.
 	Groups []string `json:"groups,omitempty"`
 }
 
@@ -121,6 +123,10 @@ type Index struct {
 // badge sources (local vs external HTTPS, project vs organization); URL is set
 // for external sources; Error carries a per-source fetch failure without failing
 // the whole build.
+//
+// Scope here is the EFFECTIVE scope — what a search will actually treat this
+// source as — not necessarily the configured one, because group membership
+// narrows it. See effectiveScope in membership.go.
 type Source struct {
 	Path   string `json:"path"`
 	Chunks int    `json:"chunks"`
@@ -142,6 +148,12 @@ type Source struct {
 	// Groups this source is labelled with, for the UI to show why a search did
 	// or did not reach it.
 	Groups []string `json:"groups,omitempty"`
+	// declared is the scope the source was CONFIGURED with, kept because Scope
+	// above is the EFFECTIVE one and membership can narrow it. Recomputing from
+	// the declared value each time is what lets a source widen again when it is
+	// taken back out of every group; deriving from the reported field would
+	// make the narrowing one-way.
+	declared string
 }
 
 func New(cfg Config) *Index {
@@ -292,7 +304,8 @@ func textKey(text string) string {
 }
 
 // effectiveSources returns the configured sources, falling back to a single
-// project-scoped local source over the legacy Root when Sources is unset.
+// globally-scoped local source over the legacy Root when Sources is unset —
+// global being the default every unassigned source gets.
 func (i *Index) effectiveSources() []SourceSpec {
 	if len(i.cfg.Sources) > 0 {
 		return i.cfg.Sources
@@ -344,7 +357,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 	for _, f := range files {
 		info, err := os.Stat(f.path)
 		if err != nil {
-			sources = append(sources, Source{Path: f.rel, Kind: KindLocal, Scope: scope, Groups: groups, Media: f.media, Error: err.Error()})
+			sources = append(sources, Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, Groups: groups, Media: f.media, Error: err.Error()})
 			continue
 		}
 		if info.Size() == 0 {
@@ -355,7 +368,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 			sidecar = videoSidecar(f.rel, rels)
 		}
 		red := reduce(f.path, f.rel, f.media, info, sidecar)
-		src := Source{Path: f.rel, Kind: KindLocal, Scope: scope, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
+		src := Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
 		if red.err != nil {
 			// One unreadable file is recorded and skipped; the rest of the
 			// folder still indexes. A build that aborts on the first corrupt
@@ -379,7 +392,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 // aborting the whole build.
 func (i *Index) ingestExternal(ctx context.Context, spec SourceSpec, scope string, chunks *[]Chunk) Source {
 	groups := normalizeGroups(spec.Groups)
-	src := Source{Path: displayName(spec), Kind: KindExternal, Scope: scope, URL: spec.URL, Groups: groups}
+	src := Source{Path: displayName(spec), Kind: KindExternal, Scope: scope, declared: scope, URL: spec.URL, Groups: groups}
 	text, err := i.fetchExternal(ctx, spec.URL)
 	if err != nil {
 		src.Error = err.Error()
@@ -438,7 +451,8 @@ func (i *Index) fetchExternal(ctx context.Context, rawURL string) (string, error
 // to no group yet, and a narrower default would make it invisible to every
 // scoped search — knowledge that is present, indexed, and unreachable, with
 // nothing in the UI to explain why. Restricting a source is then a deliberate
-// act: give it a narrower scope and assign it to groups.
+// act, and one gesture: assign it to a group on the Knowledge screen. Nothing
+// here has to be edited to make that take effect.
 func normalizeScope(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case ScopeProject, "proj":

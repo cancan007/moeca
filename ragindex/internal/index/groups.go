@@ -56,19 +56,31 @@ func (f *GroupFilter) Groups() []string {
 
 // permits reports whether a chunk may be returned.
 //
-// A globally-scoped chunk always may. That is the point of the scope: knowledge
-// declared as everyone's — a handbook, a glossary, a coding standard — should
-// not need a group membership per team to be readable, and requiring one would
-// mean re-granting the same document to every group forever.
+// A globally-scoped chunk that belongs to NO group always may. That is the
+// point of the scope: knowledge declared as everyone's — a handbook, a
+// glossary, a coding standard — should not need a group membership per team to
+// be readable, and requiring one would mean re-granting the same document to
+// every group forever.
+//
+// Being in a group is what takes a source out of that state, and it is the only
+// thing that does. The scope a source is reachable under is not declared a
+// second time here; it is derived from membership, because the group is already
+// the answer to "who is this for" — it serves named projects, which belong to
+// named organizations. Declaring it twice would give one question two places to
+// be answered, and the two would drift.
+//
+// So: assigning a source to a group narrows it, and that is the whole gesture.
+// Until it is assigned it stays everyone's, which is why the default is safe —
+// nothing becomes unreachable by accident, and nothing stays reachable once
+// someone has said who it is for.
 //
 // Otherwise an untagged chunk is visible only when there is no policy at all.
 // Under a policy it is hidden, because "no group" cannot be shown to belong to
 // any permitted one. Note that this is a decision about a NARROWLY-scoped
 // source with no labels — the safe reading of an incomplete assignment — and is
-// not the same question as the default scope, which is global precisely so that
-// nothing lands in that state by accident.
+// not the same question as the default scope above.
 func (f *GroupFilter) permits(groups []string, global bool) bool {
-	if f == nil || global {
+	if f == nil || (global && len(groups) == 0) {
 		return true
 	}
 	for _, g := range groups {

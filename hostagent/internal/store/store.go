@@ -61,8 +61,9 @@ type Schedule struct {
 	// node change as the graph is edited, so the node is what a schedule can
 	// mean for longer than a week; it is resolved to groups at launch.
 	//
-	// Absent means no scope was chosen and the run searches everything, which
-	// is what every schedule did before this field existed.
+	// Absent means no scope was chosen, and such a run retrieves nothing: the
+	// gateway refuses a session that never stated an entitlement. Reaching the
+	// knowledge shared with everyone is the "global" scope, chosen explicitly.
 	Scope *KnowledgeScope `json:"scope,omitempty"`
 }
 

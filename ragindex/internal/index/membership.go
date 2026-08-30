@@ -14,6 +14,13 @@ import "sync"
 // takes effect immediately instead of waiting on the whole index to rebuild —
 // which matters most in the direction that removes access.
 //
+// Membership is also what decides a source's scope. A source nobody has put in
+// a group is everyone's; one that has been assigned is reachable only through
+// its groups. That is not a second policy layered on top of this mapping, it is
+// a reading of it — the group already names who the knowledge is for, since it
+// serves projects that belong to organizations, so asking anyone to declare the
+// scope separately would be asking the same question twice.
+//
 // The mapping is held here and re-applied after every build, because a rebuild
 // re-ingests from the indexer's own config and would otherwise silently drop
 // every label. Dropping them fails closed — an untagged source is invisible to
@@ -94,6 +101,32 @@ func (i *Index) applyGroupsLocked() int {
 			key = i.sources[k].URL
 		}
 		i.sources[k].Groups = groupsFor[key]
+		i.sources[k].Scope = effectiveScope(i.sources[k].declared, i.sources[k].Groups)
 	}
 	return len(matched)
+}
+
+// effectiveScope is the scope a source is actually reachable under, given what
+// it was configured with and which groups it ended up in.
+//
+// The filter itself derives this from membership at query time — see permits —
+// so this exists for the UI, which lists sources by scope and would otherwise
+// badge a source as everyone's while every scoped search was skipping it. A
+// panel that says "global · default" about a source nobody outside one team can
+// reach is not a smaller problem than the filter being wrong; it is the same
+// problem, reported as fact.
+//
+// A source in a group reports "project" rather than "organization" because the
+// two are indistinguishable to the filter — only global is exempt — and of the
+// two, project is the narrower reading. Guessing the broader one from a group
+// whose reach this package cannot see would overstate what was granted.
+//
+// Narrowing only: a source declared narrower than global stays there whether or
+// not it is in a group, because that declaration is a person's decision and
+// membership is not the authority to undo it.
+func effectiveScope(declared string, groups []string) string {
+	if declared == ScopeGlobal && len(groups) > 0 {
+		return ScopeProject
+	}
+	return declared
 }

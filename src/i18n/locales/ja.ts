@@ -527,8 +527,8 @@ export const ja = {
   },
 
   daily: {
-    knowledgeScopeHint: "未指定なら全体を検索します",
-    scopeUnset: "未指定（全体を検索）",
+    knowledgeScopeHint: "未指定ならナレッジを参照しません",
+    scopeUnset: "未指定（ナレッジを参照しない）",
     scopeGlobal: "全体共有のナレッジのみ（Global）",
     scopeWholeOrg: "{{name}} 全体",
     knowledgeScope: "参照するナレッジ",
@@ -877,7 +877,7 @@ export const ja = {
       noIndexedNodes: "索引されたノードがありません",
       noIndexedNodesHint: "Settings でナレッジソースを登録し、インデックスを構築してください。",
       scopeNote:
-        "ここで選んだノードが <b>{{name}}</b> の参照範囲になります。タスクにこの group を割り当てると、選ばれたノードだけが検索対象になります。",
+        "ここで選んだノードが <b>{{name}}</b> の参照範囲になります。タスクにこの group を割り当てると、選ばれたノードだけが検索対象になります。選択はそのノードを絞る操作でもあります — 全員のナレッジではなくなり、所属する group 経由でのみ参照できるようになります。",
     },
   },
 

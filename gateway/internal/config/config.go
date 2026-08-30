@@ -140,11 +140,17 @@ type Session struct {
 	// upstreams through the ${GROUPS} inject template.
 	//
 	// nil and empty mean different things and the distinction is load-bearing:
-	// nil states no policy and the header is omitted, so the upstream searches
-	// everything; an empty slice states a session entitled to nothing and the
-	// header is sent empty. Collapsing the two would give a session with no
-	// entitlements access to every group, so this field must be decoded from
-	// JSON rather than defaulted.
+	//
+	//	nil    no entitlement was ever stated. Knowledge-scoped services refuse
+	//	       the session outright — see the gate in the proxy handler — so a
+	//	       task that never chose a scope retrieves nothing at all.
+	//	empty  an entitlement of exactly no groups, which the global scope
+	//	       resolves to. The header is sent empty and the indexer answers with
+	//	       the knowledge declared as everyone's.
+	//
+	// Collapsing the two would make "nobody chose" behave like "everyone's",
+	// which is how the widest grant ends up being the default nobody picked. So
+	// this field must be decoded from JSON rather than defaulted.
 	Groups []string `json:"groups"`
 }
 
@@ -363,6 +369,23 @@ func (s Service) PathAllowed(reqPath string) bool {
 	}
 	for _, p := range s.AllowPaths {
 		if globMatch(p, reqPath) {
+			return true
+		}
+	}
+	return false
+}
+
+// ScopesKnowledge reports whether this service enforces knowledge permissions,
+// which is true exactly when one of its injected headers is built from the
+// ${GROUPS} template.
+//
+// Derived rather than configured on purpose: a service that receives the
+// caller's groups IS the retrieval boundary, so the two cannot drift apart the
+// way a separate opt-in flag would. It is what makes the gateway refuse an
+// unnamed caller on those routes — see the session check in the proxy handler.
+func (s Service) ScopesKnowledge() bool {
+	for _, v := range s.InjectHeaders {
+		if strings.Contains(v, "${GROUPS}") {
 			return true
 		}
 	}

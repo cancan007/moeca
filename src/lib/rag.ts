@@ -6,7 +6,12 @@ const BASE = import.meta.env.VITE_RAG_URL ?? "http://127.0.0.1:8790";
 
 export type RagKind = "local" | "external";
 /** Retrieval scope. "global" is the default and the only one that bypasses the
- *  group filter — everything else is subject to the run's granted groups. */
+ *  group filter — everything else is subject to the run's granted groups.
+ *
+ *  It is reported, not set: the indexer derives it from group membership, so a
+ *  source nobody has assigned reads "global" and one that has been assigned on
+ *  the Knowledge screen reads "project". There is no control for it, by design
+ *  — assigning the source IS the gesture that narrows it. */
 export type RagScope = "global" | "project" | "organization";
 
 /** What the source file is. */

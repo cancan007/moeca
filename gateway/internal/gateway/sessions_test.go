@@ -134,3 +134,66 @@ func TestStaticSessionsStillAuthenticate(t *testing.T) {
 		t.Errorf("static session = %q %v", id, ok)
 	}
 }
+
+// An unknown token fails even where no static sessions are configured.
+//
+// The dev fallback is for a caller that presents nothing. Letting a token the
+// gateway does not recognise fall into it would make every expired run session
+// — and a gateway restart drops all of them — authenticate as a caller with no
+// group policy, which the indexer reads as permission to search everything.
+func TestUnknownTokenIsRejectedWithNoStaticSessions(t *testing.T) {
+	up := echoUpstream(t)
+	defer up.Close()
+	cfg := baseConfig(up.URL)
+	cfg.Sessions = nil
+	gw := New(cfg, io.Discard, nil, nil)
+
+	if id, groups, ok := gw.authenticate(&http.Request{Header: http.Header{SessionHeader: []string{"stale-run-token"}}}); ok {
+		t.Errorf("an unknown token authenticated as %q with groups %v", id, groups)
+	}
+}
+
+// Presenting nothing still works in that same configuration: the convenience is
+// kept for the case it was meant for.
+func TestNoTokenStillAnonymousWithNoStaticSessions(t *testing.T) {
+	up := echoUpstream(t)
+	defer up.Close()
+	cfg := baseConfig(up.URL)
+	cfg.Sessions = nil
+	gw := New(cfg, io.Discard, nil, nil)
+
+	id, groups, ok := gw.authenticate(&http.Request{Header: http.Header{}})
+	if !ok || id != AnonymousSession {
+		t.Fatalf("authenticate = %q %v", id, ok)
+	}
+	if groups != nil {
+		t.Errorf("anonymous groups = %v, want nil", groups)
+	}
+}
+
+// A revoked token behaves the same way: revocation must not degrade into the
+// anonymous fallback, which would widen the caller instead of stopping it.
+func TestRevokedTokenDoesNotFallBackToAnonymous(t *testing.T) {
+	up := echoUpstream(t)
+	defer up.Close()
+	cfg := baseConfig(up.URL)
+	cfg.Sessions = nil
+	gw := New(cfg, io.Discard, nil, nil)
+	gw.adminToken = "adm"
+	srv := httptest.NewServer(gw)
+	defer srv.Close()
+
+	_, out := mint(t, srv, "adm", `{"id":"run-1","groups":["a"]}`)
+	token := out["token"].(string)
+	req, _ := http.NewRequest("DELETE", srv.URL+AdminSessionsPath+"?token="+token, nil)
+	req.Header.Set(AdminHeader, "adm")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+
+	if id, _, ok := gw.authenticate(&http.Request{Header: http.Header{SessionHeader: []string{token}}}); ok {
+		t.Errorf("a revoked token authenticated as %q", id)
+	}
+}

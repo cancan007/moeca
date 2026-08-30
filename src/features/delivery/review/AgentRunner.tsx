@@ -17,8 +17,10 @@ import { compileRouter } from "./compileTemplate";
  * owns the graph — computing it here would mean two implementations of "what
  * does project X grant", and they would drift.
  *
- * A task with no scope resolves to nothing at all: the run stays unscoped and
- * searches everything, exactly as it did before scopes existed.
+ * A task with no scope resolves to nothing at all, and that is now a real
+ * answer rather than an absent one: the run carries no entitlement, and the
+ * gateway refuses it the indexer. Reading the knowledge shared with everyone is
+ * the Global scope, which a person chooses.
  */
 async function withStageScopes(
   stages: RunStage[],

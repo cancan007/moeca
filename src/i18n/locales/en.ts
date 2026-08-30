@@ -524,8 +524,8 @@ export const en: Dict = {
   },
 
   daily: {
-    knowledgeScopeHint: "Unset searches everything",
-    scopeUnset: "Unset (searches everything)",
+    knowledgeScopeHint: "Unset retrieves nothing",
+    scopeUnset: "Unset (no knowledge)",
     scopeGlobal: "Only knowledge shared with everyone (Global)",
     scopeWholeOrg: "All of {{name}}",
     knowledgeScope: "Knowledge it may read",
@@ -875,7 +875,7 @@ export const en: Dict = {
       noIndexedNodes: "No indexed nodes",
       noIndexedNodesHint: "Register knowledge sources under Settings and build the index.",
       scopeNote:
-        "The nodes you select here become <b>{{name}}</b>'s retrieval scope. Assign this group to a task and only those nodes are searchable.",
+        "The nodes you select here become <b>{{name}}</b>'s retrieval scope. Assign this group to a task and only those nodes are searchable. Selecting a node also narrows it: it stops being everyone's knowledge and is reachable only through the groups it belongs to.",
     },
   },
 

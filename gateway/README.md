@@ -16,8 +16,9 @@ one Go gateway
 
 Every proxied request passes, in order:
 
-1. **Session auth** — must present `X-Orchestra-Session: <token>` matching a configured session (anonymous allowed only when no sessions are configured).
+1. **Session auth** — must present `X-Orchestra-Session: <token>` matching a configured or minted session. A token that matches nothing is always rejected; anonymous is allowed only when no token is presented *and* no sessions are configured.
 2. **Routing** — longest matching service prefix.
+2b. **Knowledge gate** — a service that injects `${GROUPS}` (the RAG indexer) is closed by default. It refuses the anonymous caller (`401`), and refuses any session whose `groups` is `null` (`403`) — a session that never stated an entitlement retrieves nothing. Reaching the knowledge shared with everyone is the *Global* scope, which resolves to an empty group list and passes.
 3. **Body-size limit** — `maxBodyBytes` (default 8 MiB).
 4. **Rate limit** — per-`(session, service)` token bucket (`rps` / `burst`).
 5. **Token/cost budget** — per-`(session, service)` ceiling, estimated from bytes; returns `402` when exceeded.

@@ -524,8 +524,8 @@ export const zh: Dict = {
   },
 
   daily: {
-    knowledgeScopeHint: "未指定则检索全部",
-    scopeUnset: "未指定（检索全部）",
+    knowledgeScopeHint: "未指定则不检索知识",
+    scopeUnset: "未指定（不检索知识）",
     scopeGlobal: "仅全体共享的知识（Global）",
     scopeWholeOrg: "{{name}} 全部",
     knowledgeScope: "可检索的知识",
@@ -872,7 +872,7 @@ export const zh: Dict = {
       noIndexedNodes: "没有已索引的节点",
       noIndexedNodesHint: "请在 Settings 中登记知识源并构建索引。",
       scopeNote:
-        "此处所选的节点将成为 <b>{{name}}</b> 的检索范围。将该 group 分配给任务后，只有被选中的节点会成为检索对象。",
+        "此处所选的节点将成为 <b>{{name}}</b> 的检索范围。将该 group 分配给任务后，只有被选中的节点会成为检索对象。选择同时也会收窄该节点：它不再属于所有人，只能通过其所属的 group 访问。",
     },
   },
 
