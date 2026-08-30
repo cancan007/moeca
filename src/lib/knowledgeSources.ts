@@ -12,6 +12,13 @@ import i18n from "@/i18n";
 
 import { open } from "@tauri-apps/plugin-dialog";
 
+/** Image captioning: which vision model describes pictures at ingest, if any.
+ *  An empty model is off. */
+export interface CaptionSetting {
+  model: string;
+  prefix: string;
+}
+
 /** One registered reference: a local folder, or an HTTPS document. */
 export interface KnowledgeSource {
   kind: "local" | "external";
@@ -50,6 +57,27 @@ export const knowledgeSources = {
     const f = invoker();
     if (!f) throw new Error(i18n.t("knowledge.desktopOnly"));
     return f<KnowledgeSource[]>("knowledge_source_remove", { path });
+  },
+
+  /** Whether images are described by a vision model at ingest, and by which.
+   *
+   *  An empty model means off, which is the default and has to be: a caption
+   *  costs a model call per picture, so registering a folder of screenshots
+   *  must not quietly start spending. Reading it outside the desktop shell
+   *  answers "off" rather than throwing — there is nothing to configure there.
+   */
+  async caption(): Promise<CaptionSetting> {
+    const f = invoker();
+    if (!f) return { model: "", prefix: "" };
+    return f<CaptionSetting>("knowledge_caption");
+  },
+
+  /** Sets it and restarts the indexer, so the next build reads it. Turning it
+   *  on means that build describes every picture it has not seen before. */
+  async setCaption(model: string, prefix = ""): Promise<CaptionSetting> {
+    const f = invoker();
+    if (!f) throw new Error(i18n.t("knowledge.desktopOnly"));
+    return f<CaptionSetting>("knowledge_caption_set", { model, prefix });
   },
 
   /** Native folder picker. Returns null when the user cancels. */

@@ -74,6 +74,50 @@ fn generated_config_path() -> Option<PathBuf> {
     state_dir().map(|d| d.join("rag.generated.json"))
 }
 
+fn caption_path() -> Option<PathBuf> {
+    state_dir().map(|d| d.join("knowledge-caption.json"))
+}
+
+/// Whether images are described by a vision model so their contents become
+/// searchable, and which model does it.
+///
+/// Off is the default and has to stay the default: a caption costs a model call
+/// per picture, and registering a folder of screenshots should not quietly
+/// start spending. This is where that decision is recorded, next to the
+/// reference list, because it is the same kind of decision — what the indexer is
+/// asked to do with the files it has been given.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptionSetting {
+    /// Empty means off. The indexer reads it the same way.
+    #[serde(default)]
+    pub model: String,
+    /// Gateway route the vision model sits behind. Empty follows the embedding
+    /// route, which is what one provider serving both looks like.
+    #[serde(default)]
+    pub prefix: String,
+}
+
+impl Default for CaptionSetting {
+    fn default() -> Self {
+        Self { model: String::new(), prefix: String::new() }
+    }
+}
+
+/// The stored caption setting, or the default (off) when never written or
+/// unreadable — broken state must not turn spending on.
+pub fn caption_setting() -> CaptionSetting {
+    caption_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn write_caption_setting(c: &CaptionSetting) -> Result<(), String> {
+    let path = caption_path().ok_or("no state directory")?;
+    let raw = serde_json::to_string_pretty(c).map_err(|e| e.to_string())?;
+    std::fs::write(path, raw).map_err(|e| e.to_string())
+}
+
 /// The registered references. An unreadable or corrupt file is treated as no
 /// file rather than failing startup — broken state must not stop the app.
 ///
@@ -215,6 +259,12 @@ pub fn write_generated_config(base: Option<&Path>) -> Option<PathBuf> {
         .collect();
     cfg["sources"] = serde_json::Value::Array(sources);
 
+    // Captioning travels with the source list because it is read at the same
+    // moment: the indexer decides how to reduce a picture while ingesting it.
+    let caption = caption_setting();
+    cfg["captionModel"] = serde_json::Value::String(caption.model.clone());
+    cfg["captionPrefix"] = serde_json::Value::String(caption.prefix.clone());
+
     let path = generated_config_path()?;
     std::fs::write(&path, serde_json::to_string_pretty(&cfg).ok()?).ok()?;
     Some(path)
@@ -248,6 +298,27 @@ pub fn knowledge_source_remove(
     let refs = remove(&path)?;
     restart_indexer(&state);
     Ok(refs)
+}
+
+#[tauri::command]
+pub fn knowledge_caption() -> CaptionSetting {
+    caption_setting()
+}
+
+/// Turns captioning on or off and restarts the indexer so the next build reads
+/// the new setting. Turning it OFF costs nothing to apply; turning it on means
+/// the next build describes every picture it has not seen before, which is why
+/// the UI says so before calling this.
+#[tauri::command]
+pub fn knowledge_caption_set(
+    model: String,
+    prefix: String,
+    state: tauri::State<ConfigDir>,
+) -> Result<CaptionSetting, String> {
+    let next = CaptionSetting { model: model.trim().to_string(), prefix: prefix.trim().to_string() };
+    write_caption_setting(&next)?;
+    restart_indexer(&state);
+    Ok(next)
 }
 
 /// A bind mount cannot be added to a running container, so a change to the

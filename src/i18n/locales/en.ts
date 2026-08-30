@@ -375,7 +375,7 @@ export const en: Dict = {
       mountNote:
         "Folders are mounted <b>read-only</b>, and only into the indexer. They never reach the sandbox; an agent can get to them only through the gateway's <code>/rag</code>. A mount cannot be added to a running container, so <b>every add or remove restarts the indexer</b> and rebuilds the index.",
       formatsNote:
-        "Indexed: <b>text and code / CSV and TSV / PDF (text layer) / subtitles (.vtt, .srt)</b>. <warn>Images and video contribute only their path and filename</warn> — their contents are not indexed (put a subtitle file next to a video and that subtitle gets indexed).",
+        "Indexed: <b>text and code / CSV and TSV / PDF (text layer) / subtitles (.vtt, .srt)</b>. <warn>Images and video contribute only their path and filename</warn> — unless you turn on describing images below. Video stays name-only either way (put a subtitle file next to it and that subtitle gets indexed).",
       noSources: "No references yet. Add a folder and its nodes appear on the Knowledge screen.",
       addFolder: "＋ Add folder",
       urlPlaceholder: "Add an external https://… document",
@@ -383,6 +383,11 @@ export const en: Dict = {
       fetchFailed: "Fetch failed",
       pathOnly: "Path only",
       metadataOnlyTip: "This file's contents are not indexed (path and filename only)",
+      captionTitle: "Describe images",
+      captionOffNote: "Off. Images are findable by filename only. Turning this on has a vision model describe each picture at index time, so it can be found by what it shows — one model call per picture, paid once and cached.",
+      captionOnNote: "On, using {{model}}. Each picture is described once and the description is cached, so a rebuild pays only for images it has not seen. Video is not described.",
+      captioned: "Described",
+      captionedTip: "A vision model described this picture and the description is indexed, so it is searchable by what it shows. The words are the model's account of the image, not text written in it.",
       indexTitle: "Index",
       building: "building…",
       updatedAt: "updated",

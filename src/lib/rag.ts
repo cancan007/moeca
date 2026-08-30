@@ -17,10 +17,16 @@ export type RagScope = "global" | "project" | "organization";
 /** What the source file is. */
 export type RagMedia = "text" | "csv" | "subtitle" | "pdf" | "image" | "video";
 /** What was actually indexed for it — a different question from what it is.
+ *
  *  "metadata" means only the path and filename were embedded: the file's own
  *  contents are NOT searchable. Rendering that the same as "text" would tell
- *  the user a screenshot's contents are in the index when they are not. */
-export type RagContent = "text" | "metadata";
+ *  the user a screenshot's contents are in the index when they are not.
+ *
+ *  "caption" means a vision model looked at the picture and its description was
+ *  indexed. Searchable by content, but the words are a model's account of the
+ *  image rather than anything written in it — which is why it is not "text"
+ *  either. Only images, and only when an operator has turned captioning on. */
+export type RagContent = "text" | "metadata" | "caption";
 
 export interface RagSource {
   path: string;

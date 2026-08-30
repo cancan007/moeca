@@ -56,6 +56,15 @@ type Config struct {
 	// CacheDir is a writable directory where embedded vectors are kept across
 	// restarts. Empty keeps them in memory only. See veccache.go.
 	CacheDir string
+	// CaptionModel turns on describing images with a vision model so their
+	// contents become searchable. Empty leaves them indexed by path and
+	// filename alone, which is the default: captioning costs a model call per
+	// picture, and a knowledge base should not start spending on a rebuild
+	// because someone registered a folder. See caption.go.
+	CaptionModel string
+	// CaptionPrefix is the gateway route the vision model is behind. Defaults
+	// to EmbedPrefix, since the same provider usually serves both.
+	CaptionPrefix string
 }
 
 // Source kinds and scopes.
@@ -99,6 +108,10 @@ type Index struct {
 	// membership holds the host-pushed source→groups mapping, re-applied after
 	// every build so a reindex cannot silently drop every permission label.
 	membership membership
+	// captions holds descriptions taken from a vision model, keyed by the
+	// content of the file described, so a rebuild pays only for pictures it has
+	// never seen. See caption.go.
+	captions captionStore
 
 	mu       sync.RWMutex
 	chunks   []Chunk
@@ -205,7 +218,7 @@ func (i *Index) Build(ctx context.Context) error {
 			sources = append(sources, src)
 			continue
 		}
-		sources = append(sources, i.ingestLocal(spec, scope, &chunks)...)
+		sources = append(sources, i.ingestLocal(ctx, spec, scope, &chunks)...)
 	}
 	if len(chunks) == 0 {
 		i.swap(nil, sources, "")
@@ -253,6 +266,13 @@ func (i *Index) Build(ctx context.Context) error {
 	// something: rewriting an unchanged cache would burn the disk for nothing.
 	if len(pending) > 0 {
 		i.saveCache(next)
+	}
+	// Captions are saved on every build that could have taken one. Unlike
+	// vectors they cost a model call each, so the cheap write is worth doing
+	// even when nothing new was described — a caption lost to a restart is
+	// paid for a second time.
+	if i.captionEnabled() {
+		i.saveCaptions()
 	}
 
 	i.swap(chunks, sources, "")
@@ -334,7 +354,7 @@ func (i *Index) effectiveSources() []SourceSpec {
 // needs to know whether a caption track sits next to it, and asking that
 // question mid-walk would mean a directory read per video (or an ordering
 // dependency on when WalkDir happens to reach the sidecar).
-func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []Source {
+func (i *Index) ingestLocal(ctx context.Context, spec SourceSpec, scope string, chunks *[]Chunk) []Source {
 	assumed := scopeUnstated(spec.Scope)
 	var sources []Source
 	// Normalised once and shared by every chunk and Source below.
@@ -378,7 +398,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 		if f.media == MediaVideo {
 			sidecar = videoSidecar(f.rel, rels)
 		}
-		red := reduce(f.path, f.rel, f.media, info, sidecar)
+		red := reduce(f.path, f.rel, f.media, info, sidecar, i.captionerFor(ctx))
 		src := Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, abs: f.path, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
 		if red.err != nil {
 			// One unreadable file is recorded and skipped; the rest of the

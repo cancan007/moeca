@@ -119,7 +119,7 @@ func TestReduceImageIsMetadataOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(path)
-	red := reduce(path, "assets/logo.png", MediaImage, info, "")
+	red := reduce(path, "assets/logo.png", MediaImage, info, "", nil)
 	if red.err != nil {
 		t.Fatalf("reduce: %v", red.err)
 	}
@@ -145,7 +145,7 @@ func TestReduceVideoNamesItsSidecar(t *testing.T) {
 	}
 	info, _ := os.Stat(path)
 
-	with := reduce(path, "media/demo.mp4", MediaVideo, info, "media/demo.ja.vtt")
+	with := reduce(path, "media/demo.mp4", MediaVideo, info, "media/demo.ja.vtt", nil)
 	if with.content != ContentMetadata {
 		t.Errorf("content = %q, want %q", with.content, ContentMetadata)
 	}
@@ -156,7 +156,7 @@ func TestReduceVideoNamesItsSidecar(t *testing.T) {
 		t.Errorf("note should mention the sidecar, got %q", with.note)
 	}
 
-	without := reduce(path, "media/demo.mp4", MediaVideo, info, "")
+	without := reduce(path, "media/demo.mp4", MediaVideo, info, "", nil)
 	if !strings.Contains(without.note, "字幕") {
 		t.Errorf("a video with no track should say so, got %q", without.note)
 	}
@@ -171,7 +171,7 @@ func TestReducePDFWithoutTextLayerFallsBackToMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(path)
-	red := reduce(path, "docs/scan.pdf", MediaPDF, info, "")
+	red := reduce(path, "docs/scan.pdf", MediaPDF, info, "", nil)
 	if red.err != nil {
 		t.Fatalf("reduce: %v", red.err)
 	}
@@ -190,7 +190,7 @@ func TestReducePDFExtractsTextLayer(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(path)
-	red := reduce(path, "docs/spec.pdf", MediaPDF, info, "")
+	red := reduce(path, "docs/spec.pdf", MediaPDF, info, "", nil)
 	if red.err != nil {
 		t.Fatalf("reduce: %v", red.err)
 	}
@@ -214,7 +214,7 @@ func TestReducePDFCorruptIsRecordedNotFatal(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(path)
-	red := reduce(path, "docs/broken.pdf", MediaPDF, info, "")
+	red := reduce(path, "docs/broken.pdf", MediaPDF, info, "", nil)
 	if red.err == nil {
 		t.Fatalf("expected a per-file error, got text %q", red.text)
 	}

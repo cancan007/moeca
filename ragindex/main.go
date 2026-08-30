@@ -28,6 +28,12 @@ type fileConfig struct {
 	EmbedModel    string             `json:"embedModel"`
 	// EmbedMode: "gateway" (default) or "offline" — see internal/index/offline.go.
 	EmbedMode string `json:"embedMode"`
+
+	// CaptionModel enables image captioning; empty leaves images indexed by
+	// name alone. CaptionPrefix defaults to EmbedPrefix. Opt-in because it
+	// costs a model call per picture — see ragindex/internal/index/caption.go.
+	CaptionModel  string `json:"captionModel"`
+	CaptionPrefix string `json:"captionPrefix"`
 	// CacheDir keeps embedded vectors across restarts. Empty = memory only.
 	CacheDir string `json:"cacheDir"`
 }
@@ -62,6 +68,9 @@ func main() {
 		EmbedModel:  cfg.EmbedModel,
 		EmbedMode:   cfg.EmbedMode,
 		CacheDir:    cfg.CacheDir,
+
+		CaptionModel:  envOr("ORCHESTRA_RAG_CAPTION_MODEL", cfg.CaptionModel),
+		CaptionPrefix: cfg.CaptionPrefix,
 	})
 
 	// Vectors survive a restart; the index does not. Loading them before the
@@ -74,6 +83,11 @@ func main() {
 	// without it would treat every source as unclaimed — which now means
 	// everyone's. Restoring it before the first build closes that window.
 	idx.LoadGroups()
+
+	// And the captions, for the same reason as the vectors: describing a
+	// picture costs a model call, and a restart should not re-buy what has
+	// already been said about a file that has not changed.
+	idx.LoadCaptions()
 
 	// Best-effort initial build, retried with backoff.
 	//

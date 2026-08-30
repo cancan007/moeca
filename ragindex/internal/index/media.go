@@ -43,6 +43,12 @@ const (
 const (
 	ContentText     = "text"     // the file's own text was chunked
 	ContentMetadata = "metadata" // path / size / date only — the bytes were never read
+	// ContentCaption means a vision model looked at the file and its
+	// description was indexed. Distinct from ContentText on purpose: the words
+	// in the index are a model's account of the picture, not anything written
+	// in the file, and a UI that showed them as the same would be claiming the
+	// image contains text it does not.
+	ContentCaption = "caption"
 )
 
 // Extension sets per class. textExt (the original whitelist) lives in index.go.
@@ -110,10 +116,14 @@ var mediaLabel = map[string]string{
 	MediaVideo:    "動画",
 }
 
+// captioner describes a picture for the index, or explains why it could not.
+// nil when captioning is off, which is the default.
+type captioner func(path string) (string, error)
+
 // reduction is the outcome of turning one file into indexable text.
 type reduction struct {
 	text    string // "" => nothing to index
-	content string // ContentText | ContentMetadata
+	content string // ContentText | ContentMetadata | ContentCaption
 	note    string // non-fatal remark for the UI (truncation, no text layer, …)
 	err     error  // fatal for this file only; the build continues
 }
@@ -123,7 +133,7 @@ type reduction struct {
 // descriptor but not re-chunked here, because the sidecar file is walked and
 // indexed as a source in its own right and duplicating it would let one
 // transcript occupy several slots of the same top-k.
-func reduce(path, rel, media string, info os.FileInfo, sidecar string) reduction {
+func reduce(path, rel, media string, info os.FileInfo, sidecar string, describe captioner) reduction {
 	switch media {
 	case MediaText:
 		b, note, err := readCapped(path, maxTextBytes)
@@ -157,7 +167,7 @@ func reduce(path, rel, media string, info os.FileInfo, sidecar string) reduction
 	case MediaPDF:
 		if info.Size() > maxPDFBytes {
 			return reduction{
-				text:    describe(rel, media, info, ""),
+				text:    descriptorOf(rel, media, info, ""),
 				content: ContentMetadata,
 				note:    fmt.Sprintf("サイズ上限(%d MiB)超過のため本文は未抽出", maxPDFBytes>>20),
 			}
@@ -172,41 +182,61 @@ func reduce(path, rel, media string, info os.FileInfo, sidecar string) reduction
 		// it silently and leaving the user to wonder where it went.
 		if strings.TrimSpace(text) == "" {
 			return reduction{
-				text:    describe(rel, media, info, ""),
+				text:    descriptorOf(rel, media, info, ""),
 				content: ContentMetadata,
 				note:    "テキスト層なし（スキャンPDFの可能性）。本文は未索引",
 			}
 		}
 		return reduction{text: text, content: ContentText, note: note}
 
-	case MediaImage, MediaVideo:
-		// Deliberately metadata-only. Making an image's contents searchable
-		// means captioning or OCR through a vision model, which costs a model
-		// call per file on every rebuild — an opt-in worth having, but not a
-		// silent default. Making a video's contents searchable means ffmpeg,
-		// which would put an untrusted-binary parser inside the one container
-		// that holds all of the knowledge. Captions come in as sidecars instead.
-		note := ""
-		if media == MediaVideo {
-			if sidecar != "" {
-				note = fmt.Sprintf("字幕 %s を別ソースとして索引済み", sidecar)
-			} else {
-				note = "字幕(.vtt/.srt)が無いため本文は未索引"
-			}
-		} else {
-			note = "画像の内容は未索引（パスとファイル名のみ）"
+	case MediaImage:
+		// Metadata-only unless an operator turned captioning on. It costs a
+		// model call per picture, so it is a decision rather than a default —
+		// see caption.go.
+		descriptor := descriptorOf(rel, media, info, sidecar)
+		if describe == nil {
+			return reduction{text: descriptor, content: ContentMetadata, note: "画像の内容は未索引（パスとファイル名のみ）"}
 		}
-		return reduction{text: describe(rel, media, info, sidecar), content: ContentMetadata, note: note}
+		caption, err := describe(path)
+		if err != nil {
+			// Still in the index, still findable by name — exactly where it was
+			// before captioning existed. The reason is carried so the panel can
+			// say why this one picture is thinner than its neighbours.
+			return reduction{
+				text:    descriptor,
+				content: ContentMetadata,
+				note:    "説明の生成に失敗したため内容は未索引: " + err.Error(),
+			}
+		}
+		// Descriptor AND caption. Dropping the descriptor would trade searching
+		// by name for searching by content instead of adding the second.
+		return reduction{
+			text:    descriptor + "\n\n説明(モデル生成): " + caption,
+			content: ContentCaption,
+			note:    "内容はモデルが生成した説明として索引済み",
+		}
+
+	case MediaVideo:
+		// Not captioned, for the reason it was never indexed: describing a
+		// video means sampling frames, which means ffmpeg, which would put an
+		// untrusted-binary parser inside the one container that holds all of
+		// the knowledge. Subtitles are text and need no parser, so that is how
+		// a video's content gets in.
+		note := "字幕(.vtt/.srt)が無いため本文は未索引"
+		if sidecar != "" {
+			note = fmt.Sprintf("字幕 %s を別ソースとして索引済み", sidecar)
+		}
+		return reduction{text: descriptorOf(rel, media, info, sidecar), content: ContentMetadata, note: note}
 	}
 	return reduction{err: fmt.Errorf("unsupported media class %q", media)}
 }
 
-// describe renders the metadata descriptor that stands in for a file whose
+// descriptorOf renders the metadata descriptor that stands in for a file whose
 // bytes were not read. It is written to be *retrievable* — the filename is
 // repeated on its own line because that is usually what someone searches for —
 // and to be *honest*: the last line says outright that the contents are missing,
 // so an agent that receives this chunk cannot mistake it for the document.
-func describe(rel, media string, info os.FileInfo, sidecar string) string {
+func descriptorOf(rel, media string, info os.FileInfo, sidecar string) string {
 	label := mediaLabel[media]
 	if label == "" {
 		label = "ファイル"

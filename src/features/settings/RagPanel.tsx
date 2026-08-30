@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { sectionTitle } from "./ui";
 import { rag, RAG_SCOPES, RAG_MEDIA, type RagStatus, type RagResult, type RagSource } from "@/lib/rag";
-import { knowledgeSources, isDesktop, type KnowledgeSource } from "@/lib/knowledgeSources";
+import { knowledgeSources, isDesktop, type CaptionSetting, type KnowledgeSource } from "@/lib/knowledgeSources";
 
 // SourcesCard registers what the indexer is allowed to read.
 //
@@ -15,18 +15,40 @@ import { knowledgeSources, isDesktop, type KnowledgeSource } from "@/lib/knowled
 // and which scope that group serves, are declared on the Knowledge screen —
 // that is where the hierarchy is authored, and a second, shallower notion of
 // scope here would give two places to answer the same question.
+/** What the ON switch turns on. A vision model the shipped gateway already
+ *  routes to, and cheap enough that describing a folder of screenshots is a
+ *  decision rather than an event. The operator can point the generated config
+ *  at another one; this is only the default the toggle writes. */
+const DEFAULT_CAPTION_MODEL = "gpt-4o-mini";
+
 function SourcesCard({ onChanged }: { onChanged: () => void }) {
   const { t } = useTranslation();
   const [sources, setSources] = useState<KnowledgeSource[] | null>(null);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [caption, setCaption] = useState<CaptionSetting | null>(null);
   const desktop = isDesktop();
 
   useEffect(() => {
     if (!desktop) { setSources([]); return; }
     knowledgeSources.list().then(setSources).catch((e) => setErr(String(e)));
+    knowledgeSources.caption().then(setCaption).catch(() => setCaption({ model: "", prefix: "" }));
   }, [desktop]);
+
+  // Toggling restarts the indexer, exactly as adding a source does, because the
+  // setting is read while ingesting rather than while searching.
+  const setCaptionModel = async (model: string) => {
+    setBusy(true); setErr(null);
+    try {
+      setCaption(await knowledgeSources.setCaption(model, caption?.prefix ?? ""));
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // Every mutation restarts the indexer, so the call is slow by design and the
   // UI says what it is waiting for rather than looking hung.
@@ -82,6 +104,29 @@ function SourcesCard({ onChanged }: { onChanged: () => void }) {
           <span style={{ font: "400 10.5px 'IBM Plex Sans'", color: "var(--tx-dim)", lineHeight: 1.6 }}>
             <Trans i18nKey="settings.rag.formatsNote" components={{ b: <strong style={{ color: "var(--tx3)" }} />, warn: <strong style={{ color: "#d39a4e" }} /> }} />
           </span>
+
+          {/* Image captioning. Placed with the formats note it qualifies: that
+              note is where someone learns pictures are not searchable, so this
+              is where they should learn it is a choice. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--bg-inset2)", border: "1px solid var(--bd3)", borderRadius: 7, padding: "9px 11px" }}>
+            <div
+              onClick={busy || !caption ? undefined : () => setCaptionModel(caption.model ? "" : DEFAULT_CAPTION_MODEL)}
+              style={{
+                font: "600 9px 'IBM Plex Mono'", flex: "none", cursor: busy ? "wait" : "pointer", padding: "3px 8px", borderRadius: 5,
+                color: caption?.model ? "#06121e" : "var(--tx3)",
+                background: caption?.model ? "#b08ad9" : "var(--bg-card2)",
+                border: `1px solid ${caption?.model ? "#b08ad9" : "var(--bd2)"}`,
+              }}
+            >
+              {caption?.model ? "ON" : "OFF"}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
+              <span style={{ font: "600 10.5px 'IBM Plex Sans'", color: "var(--tx3)" }}>{t("settings.rag.captionTitle")}</span>
+              <span style={{ font: "400 9.5px 'IBM Plex Sans'", color: "var(--tx-dim)", lineHeight: 1.55 }}>
+                {caption?.model ? t("settings.rag.captionOnNote", { model: caption.model }) : t("settings.rag.captionOffNote")}
+              </span>
+            </div>
+          </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {(sources ?? []).map((s) => (
@@ -163,6 +208,16 @@ function ContentState({ source }: { source: RagSource }) {
     return (
       <span title={source.note ?? t("settings.rag.metadataOnlyTip")} style={{ ...dim, color: "#d39a4e" }}>
         {t("settings.rag.pathOnly")}
+      </span>
+    );
+  }
+  // A caption is searchable, so it earns a chunk count — but it is a model's
+  // description of the picture, not words the file contains, and saying "text"
+  // about it would be the same overclaim in a quieter voice.
+  if (source.content === "caption") {
+    return (
+      <span title={source.note ?? t("settings.rag.captionedTip")} style={{ ...dim, color: "#b08ad9" }}>
+        {t("settings.rag.captioned")}
       </span>
     );
   }

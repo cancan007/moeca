@@ -53,7 +53,9 @@ pub fn run() {
             githubapp::github_app_resync,
             knowledge::knowledge_sources,
             knowledge::knowledge_source_add,
-            knowledge::knowledge_source_remove
+            knowledge::knowledge_source_remove,
+            knowledge::knowledge_caption,
+            knowledge::knowledge_caption_set
         ])
         .build(tauri::generate_context!())
         .expect("error while building Orchestra")

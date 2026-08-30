@@ -375,7 +375,7 @@ export const zh: Dict = {
       mountNote:
         "文件夹以 <b>read-only</b> 方式，且仅挂载给索引器。它不会传入沙箱，代理只能经由 gateway 的 <code>/rag</code> 到达。运行中的容器无法追加挂载，因此<b>每次添加或删除都会重启索引器</b>并重建索引。",
       formatsNote:
-        "索引对象为<b>文本与代码 / CSV·TSV / PDF（文本层）/ 字幕(.vtt·.srt)</b>。<warn>图片与视频仅索引路径和文件名</warn>，其内容不会被索引（视频若在同一位置放置字幕文件，则该字幕会被索引）。",
+        "索引对象为<b>文本与代码 / CSV·TSV / PDF（文本层）/ 字幕(.vtt·.srt)</b>。<warn>图片与视频仅索引路径和文件名</warn>——除非开启下方的「为图片生成描述」。视频无论如何仅按名称索引；若在同一位置放置字幕文件，该字幕会被索引。",
       noSources: "尚无引用源。添加文件夹后，Knowledge 画面上就会出现节点。",
       addFolder: "＋ 添加文件夹",
       urlPlaceholder: "添加 https://… 的外部文档",
@@ -383,6 +383,11 @@ export const zh: Dict = {
       fetchFailed: "获取失败",
       pathOnly: "仅路径",
       metadataOnlyTip: "该文件的内容未被索引（仅路径与文件名）",
+      captionTitle: "为图片生成描述",
+      captionOffNote: "关闭。图片仅能按文件名检索。开启后将在建立索引时由视觉模型描述每张图片，使其可按画面内容检索——每张图片一次模型调用，结果会被缓存，不会重复计费。",
+      captionOnNote: "已开启（{{model}}）。每张图片只描述一次并缓存结果，重建索引时仅对未见过的图片计费。视频不在范围内。",
+      captioned: "已索引描述",
+      captionedTip: "视觉模型对该图片作了描述，并已将描述编入索引，因此可按画面内容检索。索引中的文字是模型对图片的描述，而非图片中书写的文字。",
       indexTitle: "索引",
       building: "构建中…",
       updatedAt: "更新",
