@@ -194,6 +194,11 @@ func (s *Server) handleKnowledgeScope(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"groups": nil, "scoped": false})
 		return
 	}
+	// Delivery calls this immediately before it launches, so it is this
+	// service's last sight of a run that is about to search. Refresh the
+	// indexer's mapping here: resolving a scope and enforcing it are two halves
+	// of one answer, and they should not be able to disagree.
+	s.syncKnowledgeGroupsLogged("scope resolved")
 	groups, scoped := s.scopeGroups(&store.KnowledgeScope{Kind: kind, ID: q.Get("id")})
 	depth := 0
 	if d, err := strconv.Atoi(q.Get("depth")); err == nil {

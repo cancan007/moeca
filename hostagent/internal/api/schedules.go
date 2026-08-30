@@ -352,6 +352,12 @@ func (s *Server) launchScheduledRun(sc *store.Schedule, now time.Time) (outputDi
 	// under a project change as the graph is edited, and a schedule that meant
 	// "this project's knowledge" should follow it.
 	groups, scoped := s.scopeGroups(sc.Scope)
+	// A schedule fires with nobody watching, into an indexer that may have
+	// restarted since the last time anything told it about the graph. Push
+	// before the run rather than trusting that something else did.
+	if scoped {
+		s.syncKnowledgeGroupsLogged("schedule " + sc.ID + " firing")
+	}
 	runID, err = s.startRun(taskID, outputDir, sc.RunSpec, groups, scoped)
 	return outputDir, "", runID, err
 }

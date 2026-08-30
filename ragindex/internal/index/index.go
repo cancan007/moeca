@@ -154,6 +154,12 @@ type Source struct {
 	// taken back out of every group; deriving from the reported field would
 	// make the narrowing one-way.
 	declared string
+	// assumedGlobal marks a source that is global because nothing said
+	// otherwise, as opposed to one whose config says so. The two are the same
+	// scope and behave identically once membership is known; they differ only
+	// when NOTHING is known, where a declaration is a person's word and a
+	// default is nobody's. See closeUnclaimedLocked.
+	assumedGlobal bool
 }
 
 func New(cfg Config) *Index {
@@ -325,6 +331,7 @@ func (i *Index) effectiveSources() []SourceSpec {
 // question mid-walk would mean a directory read per video (or an ordering
 // dependency on when WalkDir happens to reach the sidecar).
 func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []Source {
+	assumed := scopeUnstated(spec.Scope)
 	var sources []Source
 	// Normalised once and shared by every chunk and Source below.
 	groups := normalizeGroups(spec.Groups)
@@ -357,7 +364,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 	for _, f := range files {
 		info, err := os.Stat(f.path)
 		if err != nil {
-			sources = append(sources, Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, Groups: groups, Media: f.media, Error: err.Error()})
+			sources = append(sources, Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, Groups: groups, Media: f.media, Error: err.Error()})
 			continue
 		}
 		if info.Size() == 0 {
@@ -368,7 +375,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 			sidecar = videoSidecar(f.rel, rels)
 		}
 		red := reduce(f.path, f.rel, f.media, info, sidecar)
-		src := Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
+		src := Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
 		if red.err != nil {
 			// One unreadable file is recorded and skipped; the rest of the
 			// folder still indexes. A build that aborts on the first corrupt
@@ -392,7 +399,7 @@ func (i *Index) ingestLocal(spec SourceSpec, scope string, chunks *[]Chunk) []So
 // aborting the whole build.
 func (i *Index) ingestExternal(ctx context.Context, spec SourceSpec, scope string, chunks *[]Chunk) Source {
 	groups := normalizeGroups(spec.Groups)
-	src := Source{Path: displayName(spec), Kind: KindExternal, Scope: scope, declared: scope, URL: spec.URL, Groups: groups}
+	src := Source{Path: displayName(spec), Kind: KindExternal, Scope: scope, declared: scope, assumedGlobal: scopeUnstated(spec.Scope), URL: spec.URL, Groups: groups}
 	text, err := i.fetchExternal(ctx, spec.URL)
 	if err != nil {
 		src.Error = err.Error()
@@ -453,6 +460,13 @@ func (i *Index) fetchExternal(ctx context.Context, rawURL string) (string, error
 // nothing in the UI to explain why. Restricting a source is then a deliberate
 // act, and one gesture: assign it to a group on the Knowledge screen. Nothing
 // here has to be edited to make that take effect.
+// scopeUnstated reports whether a spec named no scope at all, which is a
+// different fact from naming "global": one is a decision, the other is its
+// absence, and they part company only when nothing else is known either.
+func scopeUnstated(s string) bool {
+	return strings.TrimSpace(s) == ""
+}
+
 func normalizeScope(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case ScopeProject, "proj":

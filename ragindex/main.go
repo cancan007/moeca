@@ -69,6 +69,12 @@ func main() {
 	// it has already embedded.
 	idx.LoadCache()
 
+	// Group membership survives a restart too, and for a sharper reason: it is
+	// pushed from the host and cannot be asked for, so an indexer that came back
+	// without it would treat every source as unclaimed — which now means
+	// everyone's. Restoring it before the first build closes that window.
+	idx.LoadGroups()
+
 	// Best-effort initial build, retried with backoff.
 	//
 	// The retry is not decoration: this container is started by the same shell

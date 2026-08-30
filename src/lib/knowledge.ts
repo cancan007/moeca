@@ -193,23 +193,15 @@ export interface IndexGraph {
   degenerate: boolean;
 }
 
-export const indexGraph = {
-  /** Push source→groups to the indexer.
-   *
-   *  The host owns the Knowledge graph but the indexer enforces it, and the
-   *  indexer cannot reach the host — it is off that network by design — so the
-   *  mapping is pushed from here. It is re-pushed on every screen load as well
-   *  as after each edit, because the indexer holds it in memory: were the
-   *  container to restart, its labels would be gone until something sent them
-   *  again. That failure is at least closed rather than open — an untagged
-   *  source is invisible to a scoped search — but it is why the push is not
-   *  only done on edit. */
-  syncGroups: (map: Record<string, string[]>) =>
-    call<{ sources: number; matched: number }>(RAG, "/groups", {
-      method: "POST",
-      body: JSON.stringify({ map }),
-    }),
+// Pushing source→groups to the indexer used to live here. It does not any
+// more: the host agent owns the graph and now pushes the mapping itself, at
+// startup, after an edit, and before a run. Doing it from the front end made
+// the permission model depend on somebody having the Knowledge screen open,
+// and the indexer holds membership in memory — so a container restart, which
+// registering a source deliberately causes, left it with no labels until the
+// next time the screen was visited. See hostagent's knowledgesync.go.
 
+export const indexGraph = {
   async load(): Promise<IndexGraph> {
     const g = await call<Partial<IndexGraph>>(RAG, "/graph");
     return {

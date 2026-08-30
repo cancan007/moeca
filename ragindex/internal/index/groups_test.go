@@ -282,7 +282,11 @@ func TestAssignmentNarrowsAGlobalSourceAndRestoresIt(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	// Before assignment both are global and every policy reaches them.
+	// The host pushes a mapping even when it assigns nothing — that is what an
+	// empty graph looks like, and it is the difference between "nobody is in a
+	// group" and "nobody has said anything yet". Before assignment both sources
+	// are therefore global and every policy reaches them.
+	idx.SetGroups(map[string][]string{})
 	got := sourcesOf(mustSearch(t, idx, "alpha", NewGroupFilter([]string{"team-a"})))
 	if !got["handbook.md"] || !got["payroll.md"] {
 		t.Fatalf("unassigned sources reached %v, want both", got)
@@ -351,4 +355,153 @@ func mustSearch(t *testing.T, idx *Index, q string, f *GroupFilter) []Result {
 		t.Fatalf("Search: %v", err)
 	}
 	return res
+}
+
+// Membership must survive the restart that registering a knowledge source
+// causes: rebinding a mount restarts this container, and an indexer that came
+// back without its labels would treat every source as unclaimed — which since
+// scope is read off membership means everyone's.
+func TestGroupMembershipSurvivesARestart(t *testing.T) {
+	gw := mockGateway(t)
+	t.Cleanup(gw.Close)
+	cache := t.TempDir()
+
+	mk := func(name, body string) string {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	handbook, payroll := mk("handbook.md", "alpha handbook"), mk("payroll.md", "alpha payroll")
+	cfg := Config{
+		Sources: []SourceSpec{
+			{Kind: KindLocal, Root: handbook},
+			{Kind: KindLocal, Root: payroll},
+		},
+		Gateway: gw.URL, Session: "sess", EmbedPrefix: "/openai", EmbedModel: "m",
+		CacheDir: cache,
+	}
+
+	first := New(cfg)
+	if err := first.Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	first.SetGroups(map[string][]string{"payroll.md": {"finance"}})
+
+	// A new process over the same cache directory: the labels come back before
+	// anything is searchable, without the Knowledge screen being opened.
+	second := New(cfg)
+	second.LoadGroups()
+	if err := second.Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	got := sourcesOf(mustSearch(t, second, "alpha", NewGroupFilter([]string{"team-a"})))
+	if got["payroll.md"] {
+		t.Error("a restarted indexer leaked an assigned source to a run that was not granted its group")
+	}
+	if !got["handbook.md"] {
+		t.Error("the unassigned source should still be everyone's after a restart")
+	}
+	if !sourcesOf(mustSearch(t, second, "alpha", NewGroupFilter([]string{"finance"})))["payroll.md"] {
+		t.Error("the granted group cannot reach its own source after a restart")
+	}
+}
+
+// With no cache directory the mapping stays in memory, exactly as before this
+// existed. Nothing should panic or write anywhere.
+func TestGroupMembershipWithoutACacheDirectory(t *testing.T) {
+	idx := New(Config{})
+	idx.LoadGroups() // no-op
+	if n := idx.SetGroups(map[string][]string{"a.md": {"g"}}); n != 0 {
+		t.Errorf("SetGroups matched %d sources in an empty index, want 0", n)
+	}
+}
+
+// The last resort: nothing has been pushed at all — no mapping on disk, no host
+// to ask — and a scoped run arrives anyway. It must retrieve nothing rather
+// than everything, because "no labels" cannot be read as "everything is
+// everyone's" when scope is derived from labels.
+func TestNothingPushedHidesSourcesThatAreGlobalOnlyByDefault(t *testing.T) {
+	gw := mockGateway(t)
+	t.Cleanup(gw.Close)
+
+	mk := func(name, body string) string {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	idx := New(Config{
+		Sources: []SourceSpec{
+			// Nobody said anything about this one.
+			{Kind: KindLocal, Root: mk("payroll.md", "alpha payroll")},
+			// Someone declared this one everyone's, in the config itself.
+			{Kind: KindLocal, Root: mk("handbook.md", "alpha handbook"), Scope: ScopeGlobal},
+		},
+		Gateway: gw.URL, Session: "sess", EmbedPrefix: "/openai", EmbedModel: "m",
+	})
+	if err := idx.Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	got := sourcesOf(mustSearch(t, idx, "alpha", NewGroupFilter([]string{"team-a"})))
+	if got["payroll.md"] {
+		t.Error("a source global only by default was retrievable before anything was pushed")
+	}
+	// A declaration is a person's word and this is not the place to overrule it;
+	// it is also the only way to run the indexer standalone, with no host.
+	if !got["handbook.md"] {
+		t.Error("a source whose config declares it global must stay reachable")
+	}
+
+	// Unscoped callers are untouched: a nil filter never consults any of this,
+	// so the host's own routes still see the whole index.
+	if len(sourcesOf(mustSearch(t, idx, "alpha", nil))) != 2 {
+		t.Error("an unscoped search must be unaffected by the closed state")
+	}
+
+	// Reported honestly while it lasts: a panel calling it "global · default"
+	// while every scoped search skips it is the same error, merely printed.
+	for _, s := range idx.Status().Sources {
+		if s.Path == "payroll.md" && s.Scope != ScopeProject {
+			t.Errorf("hidden source reports scope %q, want %q", s.Scope, ScopeProject)
+		}
+	}
+}
+
+// And it is a hold, not a verdict. The moment the host speaks — even to say
+// that nothing is assigned — the defaults go back to being everyone's.
+func TestAPushLiftsTheClosedState(t *testing.T) {
+	gw := mockGateway(t)
+	t.Cleanup(gw.Close)
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "payroll.md"), []byte("alpha payroll"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idx := New(Config{
+		Sources: []SourceSpec{{Kind: KindLocal, Root: dir}},
+		Gateway: gw.URL, Session: "sess", EmbedPrefix: "/openai", EmbedModel: "m",
+	})
+	if err := idx.Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if sourcesOf(mustSearch(t, idx, "alpha", NewGroupFilter([]string{"team-a"})))["payroll.md"] {
+		t.Fatal("precondition: the source should start hidden")
+	}
+
+	// An empty map is a real answer — "no group has any source" — and is what
+	// the host pushes for an empty graph. It is not the same as silence.
+	idx.SetGroups(map[string][]string{})
+	if !sourcesOf(mustSearch(t, idx, "alpha", NewGroupFilter([]string{"team-a"})))["payroll.md"] {
+		t.Error("an empty push did not lift the hold; silence and 'nothing assigned' were collapsed")
+	}
+	for _, s := range idx.Status().Sources {
+		if s.Scope != ScopeGlobal {
+			t.Errorf("after the push the source reports %q, want %q", s.Scope, ScopeGlobal)
+		}
+	}
 }

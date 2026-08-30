@@ -202,6 +202,12 @@ func (s *Server) handleKnowledgeGroupDelete(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ok, err := s.store.DeleteKnowledgeGroup(r.URL.Query().Get("id"))
+	// Deleting a group revokes every source it granted, which is the direction
+	// worth being prompt about: the indexer should stop honouring it now, not
+	// at the next run.
+	if ok && err == nil {
+		s.syncKnowledgeGroupsLogged("group deleted")
+	}
 	s.writeUpdated(w, ok, err, "group")
 }
 
@@ -246,6 +252,10 @@ func (s *Server) handleKnowledgeGroupLinks(w http.ResponseWriter, r *http.Reques
 			writeErr(w, 500, err.Error())
 			return
 		}
+		// This is the edit that changes what the indexer may return, so it is
+		// the one that is pushed. Project links do not: they decide which groups
+		// a scope resolves to, which is answered here at launch, not there.
+		s.syncKnowledgeGroupsLogged("group sources changed")
 	}
 	writeJSON(w, 200, map[string]string{"updated": req.GroupID})
 }

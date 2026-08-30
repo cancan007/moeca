@@ -44,6 +44,10 @@ func main() {
 	}
 
 	srv := api.New(&cfg)
+	// The indexer may have restarted while this process was down, and it cannot
+	// ask anyone what the Knowledge graph says. Tell it before serving, so the
+	// first run of the day does not search against no labels at all.
+	go srv.SyncKnowledgeGroups()
 	log.Printf("hostagent: listening on %s for %d repo(s)", cfg.Listen, len(cfg.Repos))
 	if err := srv.Run(); err != nil {
 		log.Fatalf("hostagent: %v", err)

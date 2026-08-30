@@ -392,8 +392,14 @@ pub fn start_rag_container(config_dir: &Option<PathBuf>) {
 
     // A writable volume for the embedded vectors, so a restart does not pay the
     // provider again for text that has not changed. It is the only writable
-    // path this container has: knowledge stays read-only, and what is kept here
-    // is derived data the indexer can always rebuild without it.
+    // path this container has: knowledge stays read-only.
+    //
+    // It also holds the group membership pushed from the host, and that part is
+    // NOT derived — this container cannot read the Knowledge graph, so an
+    // indexer coming back without it would treat every source as unclaimed,
+    // which is to say everyone's. Losing this directory is therefore a
+    // permissions event, not just a bill. The host agent re-pushes at startup
+    // and before every run, which is what makes losing it recoverable.
     if let Some(dir) = vector_cache_dir() {
         args.push("--env".into());
         args.push("ORCHESTRA_RAG_CACHE=/cache".into());

@@ -33,25 +33,15 @@ export function useKnowledge(): KnowledgeData {
   const [indexError, setIndexError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Reading only. Pushing membership to the indexer used to happen here, which
+  // meant retrieval permissions were correct only while this screen was open —
+  // a scheduled run firing overnight searched against no labels at all. The
+  // host agent owns that now: it pushes at startup, after an edit, and before a
+  // run. Nothing about it belongs in a screen.
   const reloadGraph = useCallback(async () => {
     try {
-      const g = await knowledge.graph();
-      setGraph(g);
+      setGraph(await knowledge.graph());
       setGraphError("");
-      // Push membership to the indexer, which enforces it but cannot fetch it.
-      // A failure here is deliberately not surfaced as a graph error: the
-      // authoring worked and the screen is correct, only the indexer is behind.
-      // It shows up as indexError instead, alongside the other reasons the
-      // canvas might be stale.
-      try {
-        const map: Record<string, string[]> = {};
-        for (const grp of g.groups) {
-          for (const src of grp.sources) (map[src] ??= []).push(grp.id);
-        }
-        await indexGraph.syncGroups(map);
-      } catch (e) {
-        setIndexError(e instanceof Error ? e.message : String(e));
-      }
     } catch (e) {
       setGraphError(e instanceof Error ? e.message : String(e));
     }

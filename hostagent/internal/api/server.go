@@ -48,6 +48,14 @@ type Config struct {
 	// Sandbox is the loopback sandbox controller a fired schedule launches its
 	// agent run through. Empty defaults to http://127.0.0.1:8789.
 	Sandbox SandboxConfig `json:"sandbox"`
+	// Rag is the loopback RAG indexer this service pushes group membership to.
+	// Empty defaults to http://127.0.0.1:8790. See knowledgesync.go.
+	Rag RagConfig `json:"rag"`
+}
+
+// RagConfig points the knowledge-group push at the indexer.
+type RagConfig struct {
+	URL string `json:"url"`
 }
 
 // SandboxConfig points scheduled agent runs at the sandbox controller.
@@ -97,6 +105,11 @@ type Server struct {
 	ci map[string]string // "repo/branch" -> ci status
 
 	store *store.SQLiteStore
+	// ephemeral marks a store with no file behind it. An in-memory graph is
+	// nobody's authority, so it must never be pushed at the indexer — a test
+	// run on a machine where the app happens to be up would otherwise replace
+	// the real membership with an empty one. See knowledgesync.go.
+	ephemeral bool
 
 	srcMu   sync.RWMutex // guards sources
 	sources *tasksource.Registry
@@ -139,7 +152,7 @@ func New(cfg *Config) *Server {
 			log.Printf("hostagent: seed schedules: %v", err)
 		}
 	}
-	s := &Server{cfg: cfg, g: git.New(), ci: map[string]string{}, store: st}
+	s := &Server{cfg: cfg, g: git.New(), ci: map[string]string{}, store: st, ephemeral: path == ":memory:"}
 	s.rebuildSources()
 	return s
 }
