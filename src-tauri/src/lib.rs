@@ -54,6 +54,7 @@ pub fn run() {
             knowledge::knowledge_sources,
             knowledge::knowledge_source_add,
             knowledge::knowledge_source_remove,
+            knowledge::knowledge_sources_replace,
             knowledge::knowledge_caption,
             knowledge::knowledge_caption_set
         ])

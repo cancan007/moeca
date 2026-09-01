@@ -222,6 +222,7 @@ export function Knowledge() {
           index={index}
           indexError={indexError}
           onReindex={reindex}
+          onChanged={reloadGraph}
           reached={reached}
           passagesOf={runId ? passagesOf : undefined}
           drawer={

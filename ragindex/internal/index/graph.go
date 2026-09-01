@@ -31,11 +31,16 @@ type Neighbor struct {
 // X and Y are in 0..1 rather than screen units: the projection is a property of
 // the data, and how large it is drawn is a property of the viewport.
 type GraphNode struct {
-	Source string     `json:"source"`
-	Kind   string     `json:"kind"`
-	Scope  string     `json:"scope"`
-	URL    string     `json:"url,omitempty"`
-	Groups []string   `json:"groups,omitempty"`
+	Source string   `json:"source"`
+	Kind   string   `json:"kind"`
+	Scope  string   `json:"scope"`
+	URL    string   `json:"url,omitempty"`
+	Groups []string `json:"groups,omitempty"`
+	// Origin is the registered reference this source came from, and Rel the path
+	// within it — see Source. Both are for display and for recognising a name
+	// stored before sources were qualified; Source is the identity.
+	Origin string     `json:"origin,omitempty"`
+	Rel    string     `json:"rel,omitempty"`
 	Chunks int        `json:"chunks"`
 	X      float64    `json:"x"`
 	Y      float64    `json:"y"`
@@ -81,7 +86,8 @@ func (i *Index) Graph() Graph {
 	for k, key := range order {
 		n := GraphNode{Source: key, Kind: KindLocal, Near: []Neighbor{}}
 		if s, ok := meta[key]; ok {
-			n.Source, n.Kind, n.Scope, n.URL, n.Groups, n.Chunks = s.Path, s.Kind, s.Scope, s.URL, s.Groups, s.Chunks
+			n.Source, n.Kind, n.Scope, n.URL, n.Groups, n.Origin, n.Rel, n.Chunks =
+				s.Path, s.Kind, s.Scope, s.URL, s.Groups, s.Origin, s.Rel, s.Chunks
 		}
 		nodes[k] = n
 	}

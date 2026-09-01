@@ -93,6 +93,36 @@ func (i *Index) applyGroupsLocked() int {
 			canonical[s.Path] = sourceKey(s)
 		}
 	}
+	// Assignments made before local paths were qualified by their reference name
+	// the file by its path within the folder alone. Those must keep working, or
+	// upgrading would silently untag every source — and an untagged source that
+	// was global by default becomes everyone's, which is the wrong direction to
+	// be wrong in.
+	//
+	// A bare name shared by two references is refused rather than resolved: it
+	// designates two files now, and picking one would grant a file nobody chose.
+	// It resolves itself the next time the assignment is saved, since the screen
+	// sends the qualified names back.
+	legacy := map[string]string{}
+	ambiguous := map[string]bool{}
+	for _, s := range i.sources {
+		if s.Rel == "" || s.Rel == s.Path {
+			continue // external, or already unqualified
+		}
+		if _, dup := legacy[s.Rel]; dup {
+			ambiguous[s.Rel] = true
+			continue
+		}
+		legacy[s.Rel] = sourceKey(s)
+	}
+	for rel, key := range legacy {
+		if ambiguous[rel] {
+			continue
+		}
+		if _, taken := canonical[rel]; !taken {
+			canonical[rel] = key
+		}
+	}
 	groupsFor := map[string][]string{}
 	matched := map[string]bool{}
 	for alias, groups := range m {

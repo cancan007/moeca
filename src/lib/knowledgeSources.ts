@@ -59,6 +59,21 @@ export const knowledgeSources = {
     return f<KnowledgeSource[]>("knowledge_source_remove", { path });
   },
 
+  /** Replaces the whole list in one call, and restarts the indexer once.
+   *
+   *  This is what a bulk sync is: the submitted list becomes the registered
+   *  list, removals included. Doing it as a sequence of add/remove calls would
+   *  restart the indexer per row — each restart costing a rebuild — and would
+   *  leave the list half-changed if one row failed partway through.
+   *
+   *  The shell validates every row before writing any of them, so a rejected
+   *  import leaves the current list exactly as it was. */
+  async replace(refs: KnowledgeSource[]): Promise<KnowledgeSource[]> {
+    const f = invoker();
+    if (!f) throw new Error(i18n.t("knowledge.desktopOnly"));
+    return f<KnowledgeSource[]>("knowledge_sources_replace", { refs });
+  },
+
   /** Whether images are described by a vision model at ingest, and by which.
    *
    *  An empty model means off, which is the default and has to be: a caption

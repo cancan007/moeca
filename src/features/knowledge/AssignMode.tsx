@@ -3,6 +3,7 @@ import { Trans, useTranslation } from "react-i18next";
 import {
   knowledge,
   shortLabel,
+  type GraphNode,
   type IndexGraph,
   type KnowledgeGraph,
 } from "@/lib/knowledge";
@@ -337,8 +338,23 @@ export function AssignMode({
             <Notice tone="info">
               <Trans i18nKey="knowledge.assign.scopeNote" values={{ name: group.name }} components={{ b: <b /> }} />
             </Notice>
+            {sectionsOf(index.nodes, t("knowledge.assign.externalSection")).map(({ origin, nodes }) => (
+            <div key={origin} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {/* The registered folder this came from. A local path is relative
+                  to its root, so "README.md" alone does not say which of four
+                  folders it is — and ticking the wrong one grants the wrong
+                  file. The heading is where that is answered. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                <span style={{ font: "600 9px 'IBM Plex Mono'", color: "var(--tx-faint)", letterSpacing: "0.4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {origin}
+                </span>
+                <div style={{ flex: 1, height: 1, background: "var(--bd-soft)" }} />
+                <span style={{ font: "400 9px 'IBM Plex Mono'", color: "var(--tx-faint)", flex: "none" }}>
+                  {nodes.filter((n) => group.sources.includes(n.source)).length}/{nodes.length}
+                </span>
+              </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-              {index.nodes.map((n) => {
+              {nodes.map((n) => {
                 const on = group.sources.includes(n.source);
                 return (
                   <div
@@ -390,7 +406,7 @@ export function AssignMode({
                       }}
                       title={n.source}
                     >
-                      {shortLabel(n.source)}
+                      {n.rel || shortLabel(n.source)}
                     </span>
                     <span style={{ font: "500 9px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>
                       {n.chunks}
@@ -399,9 +415,34 @@ export function AssignMode({
                 );
               })}
             </div>
+            </div>
+            ))}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+/** Groups the index's nodes by the registered reference they came from.
+ *
+ *  Local folders keep their own heading and their own order; every external
+ *  document lands in one section, because a URL already says where it is from
+ *  and one heading per document would be a list of headings.
+ *
+ *  A node from an indexer too old to report an origin has none, and falls in
+ *  last under the external heading rather than inventing a folder for it. */
+function sectionsOf(nodes: GraphNode[], externalLabel: string): { origin: string; nodes: GraphNode[] }[] {
+  const byOrigin = new Map<string, GraphNode[]>();
+  for (const n of nodes) {
+    const key = n.kind === "external" || !n.origin ? externalLabel : n.origin;
+    byOrigin.set(key, [...(byOrigin.get(key) ?? []), n]);
+  }
+  return [...byOrigin.entries()]
+    .map(([origin, ns]) => ({ origin, nodes: ns }))
+    // Local folders first, alphabetically; the external bucket last, since it
+    // is a catch-all rather than a place.
+    .sort((a, b) =>
+      a.origin === externalLabel ? 1 : b.origin === externalLabel ? -1 : a.origin.localeCompare(b.origin),
+    );
 }

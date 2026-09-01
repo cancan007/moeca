@@ -41,6 +41,20 @@ impl Reference {
         self.kind == "local"
     }
 
+    /// The stable, unique name this reference's files are addressed under.
+    ///
+    /// The leaf alone is not enough: `~/a/docs` and `~/b/docs` are two
+    /// references with one name, and their files would then share an
+    /// identifier — which for the screen that assigns sources to groups means
+    /// granting one grants the other. The suffix is a digest of the registered
+    /// path, so it is unique per reference and, unlike a position in the list,
+    /// does not change when the list is reordered. An identifier that moved
+    /// would silently detach every group assignment made against it.
+    fn id(&self) -> String {
+        let digest = crate::providers::sha256_hex(self.path.as_bytes());
+        format!("{}-{}", sanitize_segment(&self.label()), &digest[..8])
+    }
+
     /// The leaf name shown as the source in the Knowledge screen.
     fn label(&self) -> String {
         if self.is_local() {
@@ -52,6 +66,18 @@ impl Reference {
             self.path.clone()
         }
     }
+}
+
+/// Reduces a name to something safe to use as a path segment. The identifier
+/// becomes part of every source path the indexer stores, so a slash or a space
+/// in a folder name must not turn one segment into two.
+fn sanitize_segment(name: &str) -> String {
+    let out: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .collect();
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() { "source".into() } else { trimmed }
 }
 
 /// Where the registered references are recorded, and where the generated
@@ -191,6 +217,52 @@ pub fn remove(path: &str) -> Result<Vec<Reference>, String> {
     Ok(refs)
 }
 
+/// Validates one reference the same way `add` does, without registering it.
+///
+/// Split out so a bulk replace can check every row before writing any of them.
+/// A half-applied list is worse than a rejected one: the caller asked for a
+/// state, not for as much of it as happened to parse.
+pub fn check(kind: &str, path: &str) -> Result<(), String> {
+    match kind {
+        "local" if !Path::new(path).is_dir() => Err(format!("{path} はフォルダではありません")),
+        "external" if !path.starts_with("https://") => {
+            Err("外部参照は https:// で指定してください".into())
+        }
+        "local" | "external" => Ok(()),
+        _ => Err(format!("不明な種別です: {kind}")),
+    }
+}
+
+/// Replaces the whole list in one write.
+///
+/// This is what a bulk sync is: the submitted list becomes the registered list,
+/// including the removals. Doing it as a sequence of add/remove calls would
+/// restart the indexer once per row — each restart costing a rebuild — and
+/// would leave the list half-changed if one row failed partway through.
+///
+/// Every row is validated first and nothing is written unless all of them pass,
+/// for the same reason `add` refuses a path that is not a folder: a reference
+/// that indexes nothing is far harder to notice later than an error now.
+pub fn replace(refs: Vec<Reference>) -> Result<Vec<Reference>, String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut clean: Vec<Reference> = Vec::with_capacity(refs.len());
+    for r in refs {
+        let path = r.path.trim().to_string();
+        if path.is_empty() {
+            return Err("参照先が空の行があります".into());
+        }
+        check(&r.kind, &path)?;
+        // A duplicate is dropped rather than refused: the same folder listed
+        // twice means the same thing as listed once, and failing the whole
+        // import over it would be pedantry.
+        if seen.insert(path.clone()) {
+            clean.push(Reference { kind: r.kind, path });
+        }
+    }
+    save(&clean)?;
+    Ok(clean)
+}
+
 /// The container path a local folder is mounted at.
 ///
 /// The index prefix disambiguates two folders that share a leaf name — without
@@ -247,12 +319,17 @@ pub fn write_generated_config(base: Option<&Path>) -> Option<PathBuf> {
                     "kind": "local",
                     "root": container_path(r, i),
                     "name": r.label(),
+                    // What the indexer addresses this reference's files under.
+                    // Stable across reordering, unique across references — see
+                    // Reference::id.
+                    "id": r.id(),
                 })
             } else {
                 serde_json::json!({
                     "kind": "external",
                     "url": r.path,
                     "name": r.label(),
+                    "id": r.id(),
                 })
             }
         })
@@ -298,6 +375,17 @@ pub fn knowledge_source_remove(
     let refs = remove(&path)?;
     restart_indexer(&state);
     Ok(refs)
+}
+
+/// Replaces the registered references wholesale and restarts the indexer once.
+#[tauri::command]
+pub fn knowledge_sources_replace(
+    refs: Vec<Reference>,
+    state: tauri::State<ConfigDir>,
+) -> Result<Vec<Reference>, String> {
+    let saved = replace(refs)?;
+    restart_indexer(&state);
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -397,6 +485,88 @@ mod tests {
         assert_eq!(add("local", &docs).unwrap().len(), 1);
 
         assert!(remove(&docs).unwrap().is_empty());
+        assert!(list().is_empty());
+    }
+
+    // The leaf alone would give ~/a/docs and ~/b/docs one name, and their files
+    // would then share an identifier — granting one would grant the other.
+    #[test]
+    fn ids_are_unique_across_folders_sharing_a_leaf_name() {
+        let a = Reference { kind: "local".into(), path: "/Users/me/a/docs".into() };
+        let b = Reference { kind: "local".into(), path: "/Users/me/b/docs".into() };
+        assert_eq!(a.label(), b.label(), "precondition: the leaves collide");
+        assert_ne!(a.id(), b.id(), "ids must not");
+        assert!(a.id().starts_with("docs-"), "the id stays readable: {}", a.id());
+    }
+
+    // The id is stored inside every group assignment made against this
+    // reference, so it must not move when the list is edited around it.
+    #[test]
+    fn ids_are_stable() {
+        let r = Reference { kind: "local".into(), path: "/Users/me/docs".into() };
+        assert_eq!(r.id(), Reference { kind: "local".into(), path: "/Users/me/docs".into() }.id());
+    }
+
+    // The id becomes a path segment in the indexer, so a name carrying a slash
+    // or a space must not turn one segment into two.
+    #[test]
+    fn ids_are_safe_as_a_path_segment() {
+        let r = Reference { kind: "local".into(), path: "/Users/me/my docs & notes".into() };
+        assert!(!r.id().contains('/') && !r.id().contains(' '), "{}", r.id());
+    }
+
+    // A bulk sync is the submitted list, removals included.
+    #[test]
+    fn replace_swaps_the_whole_list() {
+        let env = with_temp_home();
+        let keep = env._dir.subdir("keep").to_string_lossy().to_string();
+        let gone = env._dir.subdir("gone").to_string_lossy().to_string();
+        let fresh = env._dir.subdir("fresh").to_string_lossy().to_string();
+        add("local", &keep).unwrap();
+        add("local", &gone).unwrap();
+
+        let saved = replace(vec![
+            Reference { kind: "local".into(), path: keep.clone() },
+            Reference { kind: "local".into(), path: fresh.clone() },
+            Reference { kind: "external".into(), path: "https://example.com/a.md".into() },
+        ])
+        .expect("replace");
+
+        assert_eq!(saved.len(), 3);
+        let paths: Vec<_> = list().into_iter().map(|r| r.path).collect();
+        assert!(paths.contains(&keep) && paths.contains(&fresh));
+        assert!(!paths.contains(&gone), "a sync must drop what the list omits");
+    }
+
+    // Nothing is written unless every row passes. A half-applied list is worse
+    // than a rejected one: the caller asked for a state, not for as much of it
+    // as happened to parse.
+    #[test]
+    fn replace_is_all_or_nothing() {
+        let env = with_temp_home();
+        let good = env._dir.subdir("good").to_string_lossy().to_string();
+        let missing = env._dir.path().join("nope").to_string_lossy().to_string();
+        add("local", &good).unwrap();
+
+        let err = replace(vec![
+            Reference { kind: "local".into(), path: good.clone() },
+            Reference { kind: "local".into(), path: missing },
+        ])
+        .expect_err("a row naming a non-folder must fail the import");
+        assert!(err.contains("フォルダではありません"), "{err}");
+
+        let paths: Vec<_> = list().into_iter().map(|r| r.path).collect();
+        assert_eq!(paths, vec![good], "a rejected import must leave the list untouched");
+    }
+
+    // An empty list is a legitimate answer — it is what clearing everything
+    // looks like — and must not be confused with "nothing was submitted".
+    #[test]
+    fn replace_accepts_an_empty_list() {
+        let env = with_temp_home();
+        let docs = env._dir.subdir("docs").to_string_lossy().to_string();
+        add("local", &docs).unwrap();
+        assert!(replace(vec![]).unwrap().is_empty());
         assert!(list().is_empty());
     }
 

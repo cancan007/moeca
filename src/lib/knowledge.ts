@@ -176,10 +176,20 @@ export interface GraphNeighbor {
 }
 
 export interface GraphNode {
+  /** The identity: what group assignments store and what a search returns.
+   *  For a local file this is the registered reference's id joined to the path
+   *  within it, so two folders holding the same relative path stay two
+   *  sources. */
   source: string;
   kind: "local" | "external";
   scope?: string;
   url?: string;
+  /** Display name of the registered reference this came from — the folder an
+   *  operator added. Older indexers omit it. */
+  origin?: string;
+  /** The path within that reference, which is the part a person recognises.
+   *  Older indexers omit it; the source is then the whole of it. */
+  rel?: string;
   groups?: string[];
   chunks: number;
   /** 0..1; the viewport decides the scale. */
@@ -207,7 +217,16 @@ export const indexGraph = {
   async load(): Promise<IndexGraph> {
     const g = await call<Partial<IndexGraph>>(RAG, "/graph");
     return {
-      nodes: (g.nodes ?? []).map((n) => ({ ...n, near: n.near ?? [], groups: n.groups ?? [] })),
+      nodes: (g.nodes ?? []).map((n) => ({
+        ...n,
+        near: n.near ?? [],
+        groups: n.groups ?? [],
+        // An indexer from before sources were qualified sends neither, and its
+        // paths are already the whole name — so the source stands in for both
+        // and the screen groups everything under one heading.
+        rel: n.rel || n.source,
+        origin: n.origin ?? "",
+      })),
       degenerate: g.degenerate ?? false,
     };
   },

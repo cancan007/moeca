@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { shortLabel, type GraphNode, type IndexGraph, type KnowledgeGraph } from "@/lib/knowledge";
+import { knowledge, shortLabel, type GraphNode, type IndexGraph, type KnowledgeGraph } from "@/lib/knowledge";
 import { rag } from "@/lib/rag";
 import type { ReceivedPassage } from "./trace";
 import { selectEdges, strokeWidth, totalPairs } from "./edges";
@@ -34,6 +34,7 @@ export function NodeMode({
   index,
   indexError,
   onReindex,
+  onChanged,
   reached,
   passagesOf,
   drawer,
@@ -42,6 +43,10 @@ export function NodeMode({
   index: IndexGraph;
   indexError: string;
   onReindex: () => void;
+  /** re-read the authored graph after an assignment. Absent leaves the
+   *  inspector read-only, which is what a screen with no way to save should be
+   *  rather than one whose save does nothing. */
+  onChanged?: () => Promise<void>;
   /** sources a trace reached. undefined = no trace; empty = reached nothing,
    *  which must still dim the canvas rather than read as "no trace". */
   reached?: Set<string>;
@@ -416,6 +421,8 @@ export function NodeMode({
         onReindex={onReindex}
         traced={sel && reached ? reached.has(sel.source) : undefined}
         passages={sel && passagesOf ? passagesOf(sel.source) : undefined}
+        allGroups={graph.groups}
+        onChanged={onChanged}
       />
     </div>
   );
@@ -483,6 +490,118 @@ function Stat({ label, value, strong }: { label: string; value: string; strong?:
 // the canvas is a chunk boundary — a machine-chosen slice of about 1200
 // characters that frequently cuts mid-sentence — so it is not a unit anyone
 // should be editing. The path and the open action are the useful part; fix the
+/** Choosing which groups a source belongs to.
+ *
+ *  A modal rather than checkboxes in the rail, because this is a decision made
+ *  and then committed: membership decides what a scoped run may retrieve, and a
+ *  rail that saved on every tick would apply half-made intentions. Nothing is
+ *  written until 保存, and closing without it changes nothing.
+ *
+ *  The draft lives here rather than in the inspector so that reopening always
+ *  starts from what is stored, not from what was abandoned last time. */
+function GroupPicker({
+  source,
+  label,
+  allGroups,
+  onClose,
+  onSave,
+}: {
+  source: string;
+  label: string;
+  allGroups: KnowledgeGraph["groups"];
+  onClose: () => void;
+  onSave: (picked: Set<string>) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [picked, setPicked] = useState<Set<string>>(
+    () => new Set(allGroups.filter((g) => g.sources.includes(source)).map((g) => g.id)),
+  );
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
+  return (
+    <div
+      onClick={saving ? undefined : onClose}
+      style={{ position: "absolute", inset: 0, background: "rgba(6,8,11,.62)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 32 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "var(--bg-panel)", border: "1px solid var(--bd)", borderRadius: 12, width: "min(520px, 100%)", maxHeight: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
+      >
+        <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--bd-soft)", display: "flex", flexDirection: "column", gap: 3 }}>
+          <span style={{ font: "600 12px 'IBM Plex Sans'", color: "var(--tx)" }}>{t("knowledge.node.assignTitle")}</span>
+          {/* Which source is being assigned. The rail behind is covered, and a
+              picker that does not say what it is editing is one click from
+              granting the wrong file. */}
+          <span style={{ font: "500 10px 'IBM Plex Mono'", color: "var(--tx-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={source}>
+            {label}
+          </span>
+        </div>
+
+        <div style={{ padding: "10px 12px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
+          {allGroups.map((g) => {
+            const on = picked.has(g.id);
+            return (
+              <div
+                key={g.id}
+                onClick={saving ? undefined : () => toggle(g.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderRadius: 8,
+                  cursor: saving ? "default" : "pointer",
+                  background: on ? "var(--tint-active)" : "var(--bg-card)",
+                  border: `1px solid ${on ? "var(--tint-active-bd)" : "var(--bd2)"}`,
+                }}
+              >
+                <div
+                  style={{
+                    width: 14, height: 14, borderRadius: 4, flex: "none",
+                    border: `1px solid ${on ? g.color || "var(--ac)" : "var(--bd2)"}`,
+                    background: on ? g.color || "var(--ac)" : "transparent",
+                    color: "var(--bg-deep)", font: "700 9.5px 'IBM Plex Sans'",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >
+                  {on ? "✓" : ""}
+                </div>
+                <Swatch color={g.color} />
+                <span style={{ font: "600 11.5px 'IBM Plex Sans'", color: "var(--tx)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {g.name}
+                </span>
+                <span style={{ font: "400 9px 'IBM Plex Mono'", color: "var(--tx-faint)", flex: "none" }}>
+                  {t("knowledge.node.groupSourceCount", { count: g.sources.length })}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ padding: "11px 16px", borderTop: "1px solid var(--bd-soft)", display: "flex", alignItems: "center", gap: 10 }}>
+          {/* What leaving it here would mean, said before the button that means
+              it: a source in no group is everyone's, not nobody's. */}
+          <span style={{ font: "400 9.5px 'IBM Plex Sans'", color: "var(--tx-dim)", flex: 1, lineHeight: 1.5 }}>
+            {picked.size === 0 ? t("knowledge.node.assignNoneNote") : t("knowledge.node.assignSomeNote", { count: picked.size })}
+          </span>
+          <span onClick={saving ? undefined : onClose} style={{ font: "500 10.5px 'IBM Plex Sans'", color: "var(--tx-dim)", cursor: saving ? "default" : "pointer", flex: "none" }}>
+            {t("common.cancel")}
+          </span>
+          <div
+            onClick={saving ? undefined : () => { setSaving(true); onSave(picked).finally(() => setSaving(false)); }}
+            style={{ font: "600 11px 'IBM Plex Sans'", color: "#06121e", background: "var(--ac)", padding: "7px 15px", borderRadius: 7, cursor: saving ? "default" : "pointer", flex: "none", opacity: saving ? 0.6 : 1 }}
+          >
+            {saving ? t("common.loading") : t("common.save")}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** A passage or a document, at readable size.
  *
  *  The inspector rail is 300px wide and a chunk is twelve hundred runes, so
@@ -529,6 +648,8 @@ function Inspector({
   onReindex,
   traced,
   passages,
+  allGroups,
+  onChanged,
 }: {
   node?: GraphNode;
   nodes: GraphNode[];
@@ -539,6 +660,9 @@ function Inspector({
   traced?: boolean;
   /** passages this run received from this source; undefined without a trace. */
   passages?: ReceivedPassage[];
+  /** every group, so membership can be edited rather than only read. */
+  allGroups: KnowledgeGraph["groups"];
+  onChanged?: () => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -549,6 +673,8 @@ function Inspector({
   const [reading, setReading] = useState(false);
   const [readErr, setReadErr] = useState("");
   const [full, setFull] = useState<{ title: string; body: string } | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [assignErr, setAssignErr] = useState("");
 
   // A different node is a different document; anything loaded for the last one
   // would otherwise sit under the new one's name.
@@ -556,6 +682,8 @@ function Inspector({
     setIndexed(null);
     setReadErr("");
     setFull(null);
+    setPicking(false);
+    setAssignErr("");
   }, [node?.source]);
 
   if (!node) {
@@ -702,8 +830,52 @@ function Inspector({
       </Section>
 
       {full ? <FullText title={full.title} body={full.body} onClose={() => setFull(null)} /> : null}
+      {picking && onChanged ? (
+        <GroupPicker
+          source={node.source}
+          label={node.rel || shortLabel(node.source)}
+          allGroups={allGroups}
+          onClose={() => setPicking(false)}
+          onSave={async (picked) => {
+            setAssignErr("");
+            // Only the groups whose membership actually changed are written.
+            // setLinks replaces a group's whole source set, so touching one that
+            // did not change would rewrite it from a list read moments ago —
+            // and quietly undo an edit made in between.
+            const changed = allGroups.filter(
+              (g) => g.sources.includes(node.source) !== picked.has(g.id),
+            );
+            try {
+              for (const g of changed) {
+                const next = picked.has(g.id)
+                  ? [...g.sources, node.source]
+                  : g.sources.filter((x) => x !== node.source);
+                await knowledge.setLinks(g.id, { sources: next });
+              }
+            } catch (e) {
+              // Reported, and the reload still happens: some of the writes may
+              // have landed, and the panel must show what is actually stored
+              // rather than what was asked for.
+              setAssignErr(e instanceof Error ? e.message : String(e));
+            }
+            setPicking(false);
+            await onChanged();
+          }}
+        />
+      ) : null}
 
-      <Section title={t("knowledge.node.memberGroups")} meta={groups.length ? `${groups.length}` : t("common.none")}>
+      <Section
+        title={t("knowledge.node.memberGroups")}
+        meta={groups.length ? `${groups.length}` : t("common.none")}
+        action={
+          onChanged ? (
+            <Button disabled={allGroups.length === 0} onClick={() => setPicking(true)}>
+              {t("common.edit")}
+            </Button>
+          ) : undefined
+        }
+      >
+        {assignErr ? <Notice tone="error">{assignErr}</Notice> : null}
         {groups.length === 0 ? (
           <span style={{ font: "400 10.5px 'IBM Plex Sans'", color: "var(--tx-dim)", lineHeight: 1.7 }}>
             {t("knowledge.node.noGroup")}

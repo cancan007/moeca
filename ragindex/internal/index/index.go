@@ -93,6 +93,19 @@ type SourceSpec struct {
 	URL   string `json:"url"`   // external: https URL to fetch
 	Scope string `json:"scope"` // "global" | "project" | "organization"
 	Name  string `json:"name"`  // optional display label
+	// ID is the stable, unique name this reference's files are addressed under.
+	//
+	// A local path is relative to whichever root it was found under, so two
+	// registered folders both holding "docs/overview.md" would give one
+	// identifier to two different files — and the screen that assigns sources to
+	// groups would then grant or withhold them as one. Prefixing with the
+	// reference's id keeps them apart.
+	//
+	// Supplied by the shell, which knows the host path and can make it stable:
+	// an identifier derived from a position in the list would move when the list
+	// was reordered, silently detaching every assignment made against it. Empty
+	// falls back to the display name, which is what a hand-written config gets.
+	ID string `json:"id,omitempty"`
 	// Groups are permission labels; a scoped search sees this source only if it
 	// permits one of them. A source with no groups is visible to unscoped
 	// searches only — unless its scope is global, in which case being in no
@@ -161,6 +174,13 @@ type Source struct {
 	// Groups this source is labelled with, for the UI to show why a search did
 	// or did not reach it.
 	Groups []string `json:"groups,omitempty"`
+	// Origin is the display name of the registered reference this file came
+	// from — the folder an operator added, or the external document itself. For
+	// showing; Path already carries the identity.
+	Origin string `json:"origin,omitempty"`
+	// Rel is the path within that reference, which is what a person recognises.
+	// Path is Origin's id joined to this, and is what everything addresses.
+	Rel string `json:"rel,omitempty"`
 	// declared is the scope the source was CONFIGURED with, kept because Scope
 	// above is the EFFECTIVE one and membership can narrow it. Recomputing from
 	// the declared value each time is what lets a source widen again when it is
@@ -356,6 +376,12 @@ func (i *Index) effectiveSources() []SourceSpec {
 // dependency on when WalkDir happens to reach the sidecar).
 func (i *Index) ingestLocal(ctx context.Context, spec SourceSpec, scope string, chunks *[]Chunk) []Source {
 	assumed := scopeUnstated(spec.Scope)
+	// What the operator called this reference. Every file found under it says so,
+	// which is the only way a path relative to a root can be traced back to it.
+	origin := displayName(spec)
+	// Every file this reference holds is addressed under its id, so two folders
+	// that both contain "docs/overview.md" stay two sources. See SourceSpec.ID.
+	id := specID(spec)
 	var sources []Source
 	// Normalised once and shared by every chunk and Source below.
 	groups := normalizeGroups(spec.Groups)
@@ -388,7 +414,7 @@ func (i *Index) ingestLocal(ctx context.Context, spec SourceSpec, scope string, 
 	for _, f := range files {
 		info, err := os.Stat(f.path)
 		if err != nil {
-			sources = append(sources, Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, abs: f.path, Groups: groups, Media: f.media, Error: err.Error()})
+			sources = append(sources, Source{Path: qualify(id, f.rel), Rel: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, abs: f.path, Origin: origin, Groups: groups, Media: f.media, Error: err.Error()})
 			continue
 		}
 		if info.Size() == 0 {
@@ -399,7 +425,7 @@ func (i *Index) ingestLocal(ctx context.Context, spec SourceSpec, scope string, 
 			sidecar = videoSidecar(f.rel, rels)
 		}
 		red := reduce(f.path, f.rel, f.media, info, sidecar, i.captionerFor(ctx))
-		src := Source{Path: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, abs: f.path, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
+		src := Source{Path: qualify(id, f.rel), Rel: f.rel, Kind: KindLocal, Scope: scope, declared: scope, assumedGlobal: assumed, abs: f.path, Origin: origin, Groups: groups, Media: f.media, Content: red.content, Note: red.note}
 		if red.err != nil {
 			// One unreadable file is recorded and skipped; the rest of the
 			// folder still indexes. A build that aborts on the first corrupt
@@ -410,7 +436,7 @@ func (i *Index) ingestLocal(ctx context.Context, spec SourceSpec, scope string, 
 		}
 		parts := chunkText(red.text, i.cfg.MaxChunkRune)
 		for _, p := range parts {
-			*chunks = append(*chunks, Chunk{Source: f.rel, Text: p, groups: groups, global: scope == ScopeGlobal})
+			*chunks = append(*chunks, Chunk{Source: qualify(id, f.rel), Text: p, groups: groups, global: scope == ScopeGlobal})
 		}
 		src.Chunks = len(parts)
 		sources = append(sources, src)
@@ -423,7 +449,7 @@ func (i *Index) ingestLocal(ctx context.Context, spec SourceSpec, scope string, 
 // aborting the whole build.
 func (i *Index) ingestExternal(ctx context.Context, spec SourceSpec, scope string, chunks *[]Chunk) Source {
 	groups := normalizeGroups(spec.Groups)
-	src := Source{Path: displayName(spec), Kind: KindExternal, Scope: scope, declared: scope, assumedGlobal: scopeUnstated(spec.Scope), URL: spec.URL, Groups: groups}
+	src := Source{Path: displayName(spec), Rel: displayName(spec), Kind: KindExternal, Scope: scope, declared: scope, assumedGlobal: scopeUnstated(spec.Scope), URL: spec.URL, Origin: displayName(spec), Groups: groups}
 	text, err := i.fetchExternal(ctx, spec.URL)
 	if err != nil {
 		src.Error = err.Error()
@@ -507,6 +533,31 @@ func normalizeScope(s string) string {
 }
 
 // displayName is the label shown for a source: explicit Name, else the URL/root.
+// specID is the identifier a reference's files are addressed under, or "" for a
+// reference that does not want its files qualified at all.
+//
+// The shell always supplies an id. A hand-written config may supply a name and
+// get that; one that supplies neither is the single-root case that existed
+// before any of this, and its paths stay exactly as they were. Falling back to
+// the root would qualify them with an absolute filesystem path — unique, but
+// not an identifier anyone would choose to store inside a group.
+func specID(spec SourceSpec) string {
+	if id := strings.TrimSpace(spec.ID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(spec.Name)
+}
+
+// qualify joins a reference's id to a path within it. Slash-separated because
+// the result is read as a path everywhere it goes — the UI trims it for
+// display, and a search result naming it says which folder it came from.
+func qualify(id, rel string) string {
+	if id == "" {
+		return rel
+	}
+	return id + "/" + rel
+}
+
 func displayName(spec SourceSpec) string {
 	if spec.Name != "" {
 		return spec.Name

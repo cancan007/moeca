@@ -3,6 +3,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { sectionTitle } from "./ui";
 import { rag, RAG_SCOPES, RAG_MEDIA, type RagStatus, type RagResult, type RagSource } from "@/lib/rag";
 import { knowledgeSources, isDesktop, type CaptionSetting, type KnowledgeSource } from "@/lib/knowledgeSources";
+import { parseSourcesCsv, planSync, toSourcesCsv, type CsvPlan, type CsvProblem } from "@/lib/knowledgeCsv";
 
 // SourcesCard registers what the indexer is allowed to read.
 //
@@ -28,6 +29,10 @@ function SourcesCard({ onChanged }: { onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [caption, setCaption] = useState<CaptionSetting | null>(null);
+  // A parsed CSV waiting to be applied. Held rather than applied on pick,
+  // because a sync removes: what is about to leave has to be shown before it
+  // goes, and a file picker is not a confirmation.
+  const [plan, setPlan] = useState<{ plan: CsvPlan; problems: CsvProblem[]; name: string } | null>(null);
   const desktop = isDesktop();
 
   useEffect(() => {
@@ -67,6 +72,21 @@ function SourcesCard({ onChanged }: { onChanged: () => void }) {
   const addFolder = async () => {
     const picked = await knowledgeSources.pickFolder();
     if (picked) await apply(() => knowledgeSources.add("local", picked));
+  };
+
+  const readCsv = async (file: File) => {
+    const { rows, problems } = parseSourcesCsv(await file.text());
+    setErr(null);
+    setPlan({ plan: planSync(sources ?? [], rows), problems, name: file.name });
+  };
+
+  const exportCsv = () => {
+    const blob = new Blob([toSourcesCsv(sources ?? [])], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "knowledge-sources.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   const addUrl = async () => {
@@ -161,6 +181,92 @@ function SourcesCard({ onChanged }: { onChanged: () => void }) {
               {t("common.add")}
             </div>
           </div>
+          {/* Bulk sync. Below the single-add controls because it is the wider
+              gesture: those add one thing, this decides the whole list. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderTop: "1px solid var(--bd3)", paddingTop: 11 }}>
+            <label style={{ font: "600 11px 'IBM Plex Sans'", color: busy ? "var(--tx-faint)" : "var(--ac)", cursor: busy ? "wait" : "pointer" }}>
+              {t("settings.rag.csvImport")}
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                disabled={busy}
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = ""; // so re-picking the same file fires again
+                  if (f) readCsv(f).catch((x) => setErr(x instanceof Error ? x.message : String(x)));
+                }}
+              />
+            </label>
+            <span onClick={exportCsv} style={{ font: "500 10.5px 'IBM Plex Sans'", color: "var(--tx-dim)", cursor: "pointer" }}>
+              {t("settings.rag.csvExport")}
+            </span>
+            <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.rag.csvFormat")}</span>
+          </div>
+
+          {plan && (
+            <div style={{ background: "var(--bg-inset2)", border: "1px solid var(--bd3)", borderRadius: 9, padding: "11px 13px", display: "flex", flexDirection: "column", gap: 9 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ font: "600 11px 'IBM Plex Sans'", color: "var(--tx2)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {plan.name}
+                </span>
+                <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>
+                  {t("settings.rag.csvPlanCounts", {
+                    add: plan.plan.add.length,
+                    remove: plan.plan.remove.length,
+                    keep: plan.plan.keep.length,
+                  })}
+                </span>
+              </div>
+
+              {/* Removals first and in red. They are the half of a sync nobody
+                  is expecting, and the reason this is a preview at all. */}
+              {plan.plan.remove.map((sx) => (
+                <div key={`-${sx.path}`} style={{ font: "500 10px 'IBM Plex Mono'", color: "var(--red)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  − {sx.path}
+                </div>
+              ))}
+              {plan.plan.add.map((sx) => (
+                <div key={`+${sx.path}`} style={{ font: "500 10px 'IBM Plex Mono'", color: "#67c9a4", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  + {sx.path}
+                </div>
+              ))}
+              {plan.plan.add.length === 0 && plan.plan.remove.length === 0 && (
+                <span style={{ font: "400 10.5px 'IBM Plex Sans'", color: "var(--tx-dim)" }}>{t("settings.rag.csvNoChange")}</span>
+              )}
+
+              {/* A row that did not parse is shown, never dropped: a skipped row
+                  in a sync is a deletion nobody asked for. */}
+              {plan.problems.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, borderTop: "1px solid var(--bd3)", paddingTop: 8 }}>
+                  <span style={{ font: "600 9.5px 'IBM Plex Sans'", color: "#d39a4e" }}>
+                    {t("settings.rag.csvProblems", { count: plan.problems.length })}
+                  </span>
+                  {plan.problems.map((p) => (
+                    <span key={p.line} style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      L{p.line}: {p.text} — {t(p.reason === "kind" ? "settings.rag.csvBadKind" : "settings.rag.csvNoPath")}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <div
+                  onClick={busy ? undefined : () => {
+                    const next = plan.plan.next;
+                    setPlan(null);
+                    apply(() => knowledgeSources.replace(next));
+                  }}
+                  style={{ font: "600 11px 'IBM Plex Sans'", color: "#06121e", background: "var(--ac)", padding: "7px 13px", borderRadius: 7, cursor: busy ? "wait" : "pointer" }}
+                >
+                  {t("settings.rag.csvApply")}
+                </div>
+                <span onClick={() => setPlan(null)} style={{ font: "500 10.5px 'IBM Plex Sans'", color: "var(--tx-dim)", cursor: "pointer" }}>
+                  {t("common.cancel")}
+                </span>
+              </div>
+            </div>
+          )}
           {busy && <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>{t("settings.rag.rebuilding")}</span>}
         </>
       )}
