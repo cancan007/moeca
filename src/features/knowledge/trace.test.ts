@@ -318,3 +318,22 @@ describe("passages a run received", () => {
     expect(passagesFrom(t, "kon/bible.md")[0].text).toBe("全文がここに");
   });
 });
+
+describe("when a trace happened", () => {
+  // A trace opened from the audit list can be weeks old — the store keeps 500
+  // records — so the date is part of reading it, not decoration.
+  it("carries the time of the run's first recorded retrieval", () => {
+    const t = buildTrace(
+      [
+        log({ run: "run-1", stage: "b", time: "2026-08-22T14:35:31Z", respBody: results(["b.md"]) }),
+        log({ run: "run-1", stage: "a", time: "2026-08-22T09:35:44Z", respBody: results(["a.md"]) }),
+      ],
+      "run-1",
+    );
+    expect(t.time).toBe("2026-08-22T09:35:44Z");
+  });
+
+  it("is empty for a trace with no retrievals", () => {
+    expect(buildTrace([], "run-1").time).toBe("");
+  });
+});

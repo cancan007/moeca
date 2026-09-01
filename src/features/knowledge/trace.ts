@@ -55,6 +55,10 @@ export interface TraceStage {
 
 export interface Trace {
   run: string;
+  /** when the run's first recorded retrieval happened. The audit store keeps
+   *  weeks of records, so a trace with no date is one that can be read as
+   *  today's by mistake. */
+  time: string;
   stages: TraceStage[];
   /** union across stages, with per-source totals. */
   reached: Map<string, number>;
@@ -65,6 +69,7 @@ export interface Trace {
 
 export const EMPTY_TRACE: Trace = {
   run: "",
+  time: "",
   stages: [],
   reached: new Map(),
   queryCount: 0,
@@ -223,7 +228,7 @@ export function buildTrace(logs: AccessLog[], run: string): Trace {
       reached.set(s, (reached.get(s) ?? 0) + 1);
     }
   }
-  return { run, stages, reached, queryCount, truncated };
+  return { run, time: ordered[0]?.time ?? "", stages, reached, queryCount, truncated };
 }
 
 /** One passage a run received, with where it came from in the run. */

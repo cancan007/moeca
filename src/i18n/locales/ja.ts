@@ -690,6 +690,8 @@ export const ja = {
     knowledgeTraceTip: "このランがナレッジのどこに到達したかをグラフで確認します",
     searchCount: "{{count}} 検索",
     unnamedRun: "このランに紐づくタスクの記録がありません",
+    showAllTraces: "すべて表示（{{count}}）",
+    showFewerTraces: "折りたたむ",
     tabs: { logs: "ログ", metrics: "メトリクス", optimize: "最適化" },
     a2aTree: "A2Aツリー",
     rawLog: "生ログ",

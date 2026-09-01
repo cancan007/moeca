@@ -12,6 +12,14 @@ import { Button } from "./ui";
 // direction is provable. A stage that reached nothing is evidence; a stage that
 // reached ten documents is not evidence it needed them.
 
+/** Date and time of a trace, always with the date — see Trace.time. */
+function traceWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 export function TraceBar({
   trace,
   stages,
@@ -78,11 +86,14 @@ export function TraceBar({
             <Trans i18nKey="knowledge.traceOfRun" values={{ run: trace.run }} components={{ run: <span style={{ fontFamily: "'IBM Plex Mono'", color: "var(--cyan)" }} /> }} />
           )}
         </span>
-        {label ? (
-          <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)", whiteSpace: "nowrap", flex: "none" }} title={label.sub}>
-            {label.kind}{label.sub ? ` · ${label.sub}` : ""} · {trace.run}
-          </span>
-        ) : null}
+        {/* The date is not decoration. A trace opened from the audit list can be
+            weeks old, and the whole point of reading one is to judge a
+            particular run — so it says which. */}
+        <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)", whiteSpace: "nowrap", flex: "none" }} title={label?.sub}>
+          {[traceWhen(trace.time), label ? `${label.kind}${label.sub ? ` · ${label.sub}` : ""}` : "", label ? trace.run : ""]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
         <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-dim)", whiteSpace: "nowrap" }}>
           {t("knowledge.searchesReached", { queries: trace.queryCount, nodes: trace.reached.size })}
         </span>

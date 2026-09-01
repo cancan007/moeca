@@ -687,6 +687,8 @@ export const zh: Dict = {
     knowledgeTraceTip: "以图谱查看本次运行到达了知识的哪些位置",
     searchCount: "{{count}} 次检索",
     unnamedRun: "未记录此次运行对应的任务",
+    showAllTraces: "显示全部（{{count}}）",
+    showFewerTraces: "收起",
     tabs: { logs: "日志", metrics: "指标", optimize: "优化" },
     a2aTree: "A2A 树",
     rawLog: "原始日志",

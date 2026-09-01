@@ -687,6 +687,8 @@ export const en: Dict = {
     knowledgeTraceTip: "See on the graph where in Knowledge this run reached",
     searchCount: "{{count}} searches",
     unnamedRun: "no task recorded for this run",
+    showAllTraces: "Show all ({{count}})",
+    showFewerTraces: "Show fewer",
     tabs: { logs: "Logs", metrics: "Metrics", optimize: "Optimize" },
     a2aTree: "A2A tree",
     rawLog: "Raw log",

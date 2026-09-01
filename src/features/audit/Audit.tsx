@@ -191,6 +191,22 @@ const TREE: Node[] = [
   },
 ];
 
+/** When a run happened, at the precision that matters here.
+ *
+ *  Date included, always. This list spans whatever the audit store still holds
+ *  — weeks — and a bare clock time would read as "today" for a run from a
+ *  fortnight ago, which is exactly how an old trace gets mistaken for a fresh
+ *  one. */
+function runWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** How many traceable runs the rail shows before asking. */
+const TRACE_PREVIEW = 6;
+
 const GRAN: Kind[] = ["Context", "Task", "Artifact", "Message", "Part", "Extensions", "Metadata"];
 // "all" is the no-filter sentinel; it is an id, so it survives a language switch.
 const ALL_AGENTS = "all";
@@ -358,19 +374,35 @@ export function Audit() {
   // Runs the gateway actually saw, newest first. These are the ids a trace can
   // be built for — distinct from the sample contexts listed above, which exist
   // so the screen reads sensibly with no live data.
+  //
+  // The gateway serves its records newest-first (ORDER BY seq DESC), so this
+  // walks forwards and takes each run at its first sighting. It used to walk
+  // backwards, which put the OLDEST runs at the top — and with only the first
+  // six shown, an audit store holding weeks meant the rail offered a fortnight
+  // -old run as the obvious thing to open. That is not a cosmetic ordering
+  // bug: a trace read as today's when it is a fortnight old says the wrong
+  // thing about what a run reached.
   const tracableRuns = useMemo(() => {
-    const seen = new Set<string>();
-    const out: { id: string; retrievals: number }[] = [];
-    for (let i = liveLogs.length - 1; i >= 0; i--) {
-      const r = liveLogs[i].run;
-      if (!r || seen.has(r)) continue;
-      seen.add(r);
-      out.push({
-        id: r,
-        retrievals: liveLogs.filter((l) => l.run === r && l.service === "rag").length,
-      });
+    const order: string[] = [];
+    const stats = new Map<string, { first: string; retrievals: number }>();
+    for (const l of liveLogs) {
+      if (!l.run) continue;
+      let st = stats.get(l.run);
+      if (!st) {
+        order.push(l.run);
+        st = { first: l.time, retrievals: 0 };
+        stats.set(l.run, st);
+      }
+      // Records arrive newest-first, so the last one seen for a run is its
+      // earliest — which is when the run began, and the date a reader wants.
+      if (l.time < st.first) st.first = l.time;
+      if (l.service === "rag") st.retrievals++;
     }
-    return out;
+    return order.map((id) => ({
+      id,
+      time: stats.get(id)!.first,
+      retrievals: stats.get(id)!.retrievals,
+    }));
   }, [liveLogs]);
 
   // What each of those runs was, in a person's terms. The log only carries the
@@ -381,6 +413,11 @@ export function Audit() {
   // starts, not continuously, and a name that has not arrived yet costs a row
   // its title for one poll rather than costing every poll two requests.
   const [runLabels, setRunLabels] = useState<Map<string, RunLabel>>(new Map());
+  // The audit store keeps weeks of records, so this list grows without bound
+  // while the rail it sits in is a fixed column. Six is what fits above the
+  // context list without pushing it off screen; the rest are one click away
+  // rather than gone.
+  const [allTraces, setAllTraces] = useState(false);
   // Keyed by WHICH runs are unnamed, not merely whether any are. A run nobody
   // recorded stays unnamed forever, and a boolean would sit true from then on —
   // so every run started afterwards would inherit that "already asked" and
@@ -520,7 +557,7 @@ export function Audit() {
             <div style={{ font: "600 8.5px 'IBM Plex Mono'", color: "var(--tx-faint)", letterSpacing: "0.4px" }}>
               {t("audit.knowledgeTrace")}
             </div>
-            {tracableRuns.slice(0, 6).map((r) => {
+            {(allTraces ? tracableRuns : tracableRuns.slice(0, TRACE_PREVIEW)).map((r) => {
               const label = runLabels.get(r.id);
               return (
                 <div
@@ -547,11 +584,23 @@ export function Audit() {
                       search takes, and the title is what decides whether to run
                       one. */}
                   <span style={{ font: "400 8.5px 'IBM Plex Mono'", color: "var(--tx-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {label ? (label.sub ? `${label.sub} · ${r.id}` : r.id) : t("audit.unnamedRun")}
+                    {[runWhen(r.time), label ? label.sub : "", label ? r.id : t("audit.unnamedRun")]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </div>
               );
             })}
+            {tracableRuns.length > TRACE_PREVIEW ? (
+              <div
+                onClick={() => setAllTraces((v) => !v)}
+                style={{ font: "500 9.5px 'IBM Plex Sans'", color: "var(--ac)", cursor: "pointer", padding: "1px 2px" }}
+              >
+                {allTraces
+                  ? t("audit.showFewerTraces")
+                  : t("audit.showAllTraces", { count: tracableRuns.length })}
+              </div>
+            ) : null}
           </div>
         ) : null}
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
