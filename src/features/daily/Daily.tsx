@@ -3,7 +3,7 @@ import { schedules as schedulesApi, scheduleTask, type Attachment, type Schedule
 import { daily as dailyApi, type Ticket, type ScheduleRun } from "@/lib/daily";
 import { useStore } from "@/store/useStore";
 import { templateOptions, compileRef, buildRunSpec, type TemplateStores } from "@/lib/agentTemplates";
-import { ArtifactGallery, DailyRunDrawer, formatSize } from "./ArtifactGallery";
+import { ArtifactGallery, DailyRunDrawer, GallerySelectionControls, formatSize, type GallerySelection } from "./ArtifactGallery";
 import { calendarRuns, runStateLabel, type CalendarRun } from "./calendarRuns";
 import { parseCron } from "@/lib/cron";
 import { knowledge as knowledgeApi } from "@/lib/knowledge";
@@ -447,6 +447,10 @@ export function Daily() {
   // Knowledge scope: which part of the Knowledge graph this schedule may read.
   // undefined means no scope was chosen, and such a run retrieves nothing: the
   // gateway refuses a session that never stated an entitlement.
+  // What the gallery has selected. It lives here because the controls for it
+  // belong in the header beside the title, while the selection itself belongs
+  // to the gallery that owns the artifacts.
+  const [gallerySel, setGallerySel] = useState<GallerySelection | null>(null);
   const [draftScope, setDraftScope] = useState<KnowledgeScope | undefined>(undefined);
   // Attachments already on the schedule, and files chosen for one that does not
   // exist yet. A new schedule has no id to upload against, so the files wait in
@@ -852,7 +856,7 @@ export function Daily() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "var(--bg-app)" }}>
         {/* header */}
         <div style={{ height: 48, flex: "none", display: "flex", alignItems: "center", padding: "0 20px", gap: 12, borderBottom: "1px solid var(--bd)" }}>
-          {dailyIsGallery && <span style={{ font: "600 13px 'IBM Plex Sans'", color: "var(--tx)" }}>{t("daily.galleryTitle")}</span>}
+          {dailyIsGallery && <span style={{ font: "600 13px 'IBM Plex Sans'", color: "var(--tx)", flex: "none" }}>{t("daily.galleryTitle")}</span>}
           {dailyIsCalendar && <span style={{ font: "600 13px 'IBM Plex Sans'", color: "var(--tx)" }}>{t("daily.calendarTitle")}</span>}
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
             <div onClick={() => setDailyView("gallery")} style={segBtn(dailyIsGallery)}>{t("daily.gallery")}</div>
@@ -873,6 +877,10 @@ export function Daily() {
               {connecting ? t("daily.connecting") : live ? "host agent" : t("daily.hostRetry")}
             </span>
           </div>
+          {/* Beside the connection indicator rather than the title: both say
+              what state the view is in rather than what it is called, and a
+              selection comes and goes the same way a connection does. */}
+          {dailyIsGallery && gallerySel && <GallerySelectionControls selection={gallerySel} />}
           <div style={{ flex: 1 }} />
           {dailyIsGallery && (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -910,7 +918,7 @@ export function Daily() {
           </div>
         )}
 
-        {dailyIsGallery && live && <ArtifactGallery runs={runs} />}
+        {dailyIsGallery && live && <ArtifactGallery runs={runs} onSelection={setGallerySel} />}
 
         {/* calendar view */}
         {dailyIsCalendar && (

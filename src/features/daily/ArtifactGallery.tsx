@@ -39,6 +39,9 @@ const cardBase: CSSProperties = {
   border: "1px solid var(--bd2)",
   borderRadius: 10,
   overflow: "hidden",
+  // The selection tick is positioned against the card, not the thumbnail, so
+  // it lands in the same corner whether or not there is an image behind it.
+  position: "relative",
   cursor: "pointer",
   display: "flex",
   flexDirection: "column",
@@ -69,8 +72,12 @@ function shortTime(iso: string): string {
  * those are re-creatable; this is not, so the button asks once. Cheaper than a
  * modal, and it keeps the confirmation next to the thing being confirmed.
  */
-function DangerButton({ label, confirmLabel, busyLabel, onConfirm }: {
+export function DangerButton({ label, confirmLabel, busyLabel, onConfirm, dense = false }: {
   label: string; confirmLabel: string; busyLabel: string; onConfirm: () => Promise<void>;
+  /** Header-sized. Same two clicks and the same colours — only the padding
+   *  changes, because a destructive control that reads as an afterthought is
+   *  the one people press by accident. */
+  dense?: boolean;
 }) {
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -89,14 +96,51 @@ function DangerButton({ label, confirmLabel, busyLabel, onConfirm }: {
         onConfirm().finally(() => { setBusy(false); setArmed(false); });
       }}
       style={{
-        font: "600 11px 'IBM Plex Sans'", cursor: busy ? "default" : "pointer",
-        padding: "7px 12px", borderRadius: 7, whiteSpace: "nowrap",
+        font: `600 ${dense ? 10.5 : 11}px 'IBM Plex Sans'`, cursor: busy ? "default" : "pointer",
+        padding: dense ? "4px 9px" : "7px 12px", borderRadius: dense ? 6 : 7, whiteSpace: "nowrap",
         color: armed ? "#fff" : "var(--red)",
         background: armed ? "var(--red)" : "transparent",
         border: `1px solid ${armed ? "var(--red)" : "var(--tint-red-bd)"}`,
       }}
     >
       {busy ? busyLabel : armed ? confirmLabel : label}
+    </div>
+  );
+}
+
+/** The selection controls, drawn in the screen header beside the gallery title.
+ *
+ *  Deliberately narrow. It sits in a row that already carries a view switch, a
+ *  connection indicator and a legend, so it earns its place by being a count
+ *  and two controls rather than a bar — and by disappearing entirely when
+ *  nothing is selected. */
+export function GallerySelectionControls({ selection }: { selection: GallerySelection }) {
+  const { t } = useTranslation();
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none", background: "var(--tint-active)", border: "1px solid var(--tint-active-bd)", borderRadius: 8, padding: "3px 4px 3px 9px" }}>
+      <span
+        // The failure text goes in the tooltip rather than the row: it is a
+        // sentence, the row has no room for one, and the count turning red is
+        // enough to say that something is worth hovering.
+        title={selection.error || undefined}
+        style={{ font: "600 10.5px 'IBM Plex Sans'", color: selection.error ? "var(--red)" : "var(--tx2)", whiteSpace: "nowrap" }}
+      >
+        {t("daily.selectedCount", { count: selection.count })}
+      </span>
+      <DangerButton
+        dense
+        label={t("daily.deleteSelectedShort")}
+        confirmLabel={t("daily.deleteSelectedConfirm", { count: selection.count })}
+        busyLabel={t("daily.deletingSelected")}
+        onConfirm={selection.remove}
+      />
+      <div
+        onClick={selection.clear}
+        title={t("daily.clearSelection")}
+        style={{ cursor: "pointer", color: "var(--tx-dim)", font: "400 12px 'IBM Plex Sans'", padding: "0 5px", lineHeight: 1 }}
+      >
+        ✕
+      </div>
     </div>
   );
 }
@@ -108,12 +152,50 @@ interface Item {
   art: Artifact;
 }
 
-export function ArtifactGallery({ runs }: { runs: ScheduleRun[] }) {
+/** The one name an artifact has here. The run id is half of it because a path
+ *  is only unique within the run that produced it. */
+const itemKey = (it: Item) => `${it.run.id}:${it.art.path}`;
+
+/** What the gallery is currently holding selected, for whoever draws the
+ *  controls.
+ *
+ *  The state stays in the gallery — it owns the items, and how many are
+ *  selected is only meaningful against those — but the controls belong in the
+ *  screen's header, beside the title. So the gallery reports, and the header
+ *  renders. Null when nothing is selected, which is also what a header should
+ *  show: nothing. */
+export interface GallerySelection {
+  count: number;
+  /** partial-failure message from the last attempt, if any. */
+  error: string;
+  remove: () => Promise<void>;
+  clear: () => void;
+}
+
+export function ArtifactGallery({ runs, onSelection }: {
+  runs: ScheduleRun[];
+  /** Called whenever the selection changes, so the screen's header can draw the
+   *  controls for it. Null means nothing is selected. */
+  onSelection?: (s: GallerySelection | null) => void;
+}) {
   const { t } = useTranslation();
   const [items, setItems] = useState<Item[]>([]);
   const drop = (it: Item) => setItems((xs) => xs.filter((x) => !(x.run.id === it.run.id && x.art.path === it.art.path)));
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<Item | null>(null);
+  // Selection lives here rather than in the cards, because what is selected is
+  // a property of the gallery: the action bar counts it and the delete spans
+  // several runs at once.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulkErr, setBulkErr] = useState("");
+
+  const toggle = (it: Item) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      const k = itemKey(it);
+      if (!next.delete(k)) next.add(k);
+      return next;
+    });
 
   // Only occurrences that actually launched something have an output directory.
   const producing = runs.filter((r) => r.outputDir);
@@ -138,6 +220,18 @@ export function ArtifactGallery({ runs }: { runs: ScheduleRun[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  // Drop ticks for artifacts that are no longer here. `selected` is already
+  // derived so nothing displayed depends on this, but a set quietly growing
+  // stale keys across reloads is the kind of thing that is fine until it is
+  // suddenly the reason a count is wrong.
+  useEffect(() => {
+    const live = new Set(items.map(itemKey));
+    setPicked((prev) => {
+      const next = new Set([...prev].filter((k) => live.has(k)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
+
   // Group by the schedule's perspective so the gallery keeps its existing
   // shape (discovery / context-opt / automation) rather than a flat pile.
   const groups = new Map<string, Item[]>();
@@ -145,6 +239,54 @@ export function ArtifactGallery({ runs }: { runs: ScheduleRun[] }) {
     const g = it.run.perspective || "automation";
     groups.set(g, [...(groups.get(g) ?? []), it]);
   }
+
+  // What is selected is derived from what exists, never read off the set alone.
+  // A reload can drop an artifact that was ticked, and a bar offering to delete
+  // four things when three are left would be lying about the one that went.
+  const selected = items.filter((it) => picked.has(itemKey(it)));
+
+  const clearSelection = () => { setPicked(new Set()); setBulkErr(""); };
+
+  /** Deletes everything selected, keeping whatever failed selected.
+   *
+   *  Settled rather than all: these are separate files and one failing says
+   *  nothing about the rest. Removing only the ones that actually went, and
+   *  leaving the others ticked, means a second press retries exactly the
+   *  remainder instead of asking the user to work out what happened. */
+  const deleteSelected = async () => {
+    setBulkErr("");
+    const results = await Promise.allSettled(
+      selected.map((it) =>
+        dailyApi.deleteArtifact(it.run.id, it.art.path).then(() => it),
+      ),
+    );
+    const gone = new Set<string>();
+    let failed = 0;
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") gone.add(itemKey(selected[i]));
+      else failed++;
+    });
+    setItems((xs) => xs.filter((x) => !gone.has(itemKey(x))));
+    setPicked((prev) => new Set([...prev].filter((k) => !gone.has(k))));
+    if (failed > 0) setBulkErr(t("daily.deleteSomeFailed", { count: failed }));
+  };
+
+  // Hand the header a fresh view of the selection. Rebuilt on every render that
+  // changed one of these, so the closures inside it never act on a stale list.
+  //
+  // The cleanup reports null: leaving the gallery — for the calendar, or for
+  // another screen — must take its controls with it, or the header would keep
+  // offering to delete things nobody can see any more.
+  useEffect(() => {
+    onSelection?.(selected.length === 0 ? null : {
+      count: selected.length,
+      error: bulkErr,
+      remove: deleteSelected,
+      clear: clearSelection,
+    });
+    return () => onSelection?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected.length, bulkErr, items]);
 
   if (loading) {
     return <div style={{ padding: "18px 20px", font: "400 11px 'IBM Plex Sans'", color: "var(--tx-faint)" }}>{t("daily.loadingArtifacts")}</div>;
@@ -169,11 +311,40 @@ export function ArtifactGallery({ runs }: { runs: ScheduleRun[] }) {
               {PERSPECTIVE_KEY[perspective] ? t(PERSPECTIVE_KEY[perspective]) : perspective}
             </span>
             <div style={{ flex: 1, height: 1, background: "var(--bd)" }} />
+            {/* Selecting a whole group is the common case — a run's output is
+                usually kept or dropped together — so it is one click from the
+                heading that already counts it. */}
+            <span
+              onClick={() => {
+                const keys = list.map(itemKey);
+                const all = keys.every((k) => picked.has(k));
+                setPicked((prev) => {
+                  const next = new Set(prev);
+                  for (const k of keys) {
+                    if (all) next.delete(k);
+                    else next.add(k);
+                  }
+                  return next;
+                });
+              }}
+              style={{ font: "500 9.5px 'IBM Plex Sans'", color: "var(--ac)", cursor: "pointer", flex: "none" }}
+            >
+              {list.every((it) => picked.has(itemKey(it))) ? t("daily.deselectAll") : t("daily.selectAll")}
+            </span>
             <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("daily.countUnit", { count: list.length })}</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 13 }}>
             {list.map((it) => (
-              <ArtifactCard key={`${it.run.id}:${it.art.path}`} item={it} onOpen={() => setOpen(it)} />
+              <ArtifactCard
+                key={itemKey(it)}
+                item={it}
+                picked={picked.has(itemKey(it))}
+                // Once anything is ticked, a plain click keeps ticking. Opening
+                // the previewer mid-selection is almost never what was meant,
+                // and it is one dismissal away when it is.
+                onOpen={() => (selected.length > 0 ? toggle(it) : setOpen(it))}
+                onToggle={() => toggle(it)}
+              />
             ))}
           </div>
         </div>
@@ -271,12 +442,42 @@ export function DailyRunDrawer({ run, onClose, onOptimize, onDeleted }: { run: S
   );
 }
 
-function ArtifactCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
+function ArtifactCard({ item, onOpen, picked = false, onToggle }: {
+  item: Item;
+  onOpen: () => void;
+  /** Selection is the gallery's affair. The run drawer shows the same card
+   *  without it — a run's files are deleted there by deleting the run, so a
+   *  per-file tick would be a second way to say the same thing. */
+  picked?: boolean;
+  onToggle?: () => void;
+}) {
   const { art, run } = item;
   const color = KIND_COLOR[art.kind];
   const sub = `${shortTime(art.modTime)} · ${run.name}`;
   return (
-    <div onClick={onOpen} style={cardBase} title={art.path}>
+    <div
+      onClick={onOpen}
+      style={picked ? { ...cardBase, borderColor: "var(--ac)", boxShadow: "0 0 0 1px var(--ac)" } : cardBase}
+      title={art.path}
+    >
+      {/* The tick sits over the thumbnail rather than beside the title, so it
+          is in the same place whatever the card is showing. stopPropagation
+          because the card itself opens the previewer. */}
+      <div
+        onClick={onToggle ? (e) => { e.stopPropagation(); onToggle(); } : undefined}
+        style={{
+          display: onToggle ? "flex" : "none",
+          position: "absolute", right: 7, top: 7, zIndex: 2,
+          width: 18, height: 18, borderRadius: 5, cursor: "pointer",
+          alignItems: "center", justifyContent: "center",
+          font: "700 11px 'IBM Plex Sans'", lineHeight: 1,
+          color: picked ? "#06121e" : "transparent",
+          background: picked ? "var(--ac)" : "rgba(6,8,11,.45)",
+          border: `1px solid ${picked ? "var(--ac)" : "rgba(255,255,255,.35)"}`,
+        }}
+      >
+        ✓
+      </div>
       <div style={{ height: 96, position: "relative", background: art.kind === "video" ? VIDEO_GRAD : art.kind === "audio" ? AUDIO_GRAD : art.kind === "image" ? IMAGE_GRAD : "var(--bg-thumb)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <span style={cornerDot(color)} />
         {art.kind === "image" ? (
