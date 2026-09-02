@@ -901,7 +901,12 @@ export const zh: Dict = {
       memberProjects: "所属 PROJECT",
       noProjects: "暂无 project。请在「归属分配」中创建。",
       multiProject: "group 可以关联到多个 project。",
-      relationNote: "relation 是地图，而非权限。即便沿其查找，也必定会被检索方 group 所限定。",
+      grant: {
+        chains: "会扩大范围：持有该 group 的运行也能到达对方，并可继续向后延伸。",
+        once: "仅扩大一步，不会从到达处继续向后延伸。",
+        none: "仅作说明，该边不会扩大范围。",
+      },
+      relationNote: "relation 是智能体可能沿用的地图。它本身不会扩大任何范围（需为智能体设置「关联深度」），但一旦被沿用，扩大到何处由下方的类型决定。",
       pickOtherGroup: "选择对方的 GROUP",
       fromThis: "该 group →",
       toThis: "→ 该 group",

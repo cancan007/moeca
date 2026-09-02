@@ -906,7 +906,12 @@ export const en: Dict = {
       memberProjects: "MEMBER PROJECTS",
       noProjects: "No projects. Create one under Membership.",
       multiProject: "A group can belong to several projects.",
-      relationNote: "A relation is a map, not a permission. Whatever it leads to is still narrowed by the retrieving group.",
+      grant: {
+        chains: "Widens a scope: a run holding this group also reaches the other, and onward from there.",
+        once: "Widens a scope by one step only — it cannot be followed onward from what it reaches.",
+        none: "Documentation only. This edge never widens a scope.",
+      },
+      relationNote: "A relation is a map that some agents may follow. It widens nothing on its own — an agent has to be given relation hops — but where it is followed, the type below decides how far.",
       pickOtherGroup: "Select the other GROUP",
       fromThis: "this group →",
       toThis: "→ this group",

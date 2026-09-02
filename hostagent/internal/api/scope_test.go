@@ -105,7 +105,7 @@ func TestStageScopesAreStatedPerStage(t *testing.T) {
 			return seed
 		}
 		return append(append([]string{}, seed...), "widened")
-	})
+	}, func(string, []string, int) {})
 	stages := spec["stages"].([]any)
 	plan := stages[0].(map[string]any)["groups"].([]string)
 	research := stages[1].(map[string]any)["groups"].([]string)

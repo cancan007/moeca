@@ -18,17 +18,6 @@ import (
 // are generated once at creation and never edited. Renaming a group changes
 // only its label.
 
-// RelationTypes are the link kinds the graph can draw. An unknown type is
-// rejected rather than stored, because the renderer has no colour or dash
-// pattern for it and would drop the edge silently.
-var RelationTypes = map[string]bool{
-	"requires":       true,
-	"supersedes":     true,
-	"conflicts-with": true,
-	"derives-from":   true,
-	"references":     true,
-}
-
 // knowledgeGraph is the whole graph in one response. The screen needs all of it
 // on load — the rail lists groups, the canvas needs relations, the assignment
 // view needs orgs and projects — so it is one round trip rather than four.

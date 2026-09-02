@@ -178,7 +178,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// is the distinction nil-versus-empty has been carrying all along; this
 		// is the point where it finally decides something.
 		if groups == nil {
-			g.log.write(accessLog{RequestID: requestID(), Session: session, Service: name, Method: r.Method, Path: r.URL.Path, Status: http.StatusForbidden, Err: "scope_required"})
+			g.log.write(accessLog{RequestID: requestID(), Session: session, Run: r.Header.Get(RunHeader), Stage: r.Header.Get(StageHeader), Service: name, Method: r.Method, Path: r.URL.Path, Status: http.StatusForbidden, Err: "scope_required"})
 			writeJSON(w, http.StatusForbidden, errBody("this run has no knowledge scope, so it may not retrieve; choose one on the task (Global for knowledge shared with everyone)"))
 			return
 		}
@@ -433,8 +433,16 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, session string, 
 	if refused := rec.status >= 400 && rec.status < 500 && inTok+outTok == 0; !refused {
 		tokens = g.budget.add(key, charge)
 	}
+	// The entitlement is recorded only where it meant something. Attaching it to
+	// a model call would make every request in the log carry a permission it did
+	// not consult, and the one place it matters would stop standing out.
+	var grantedGroups []string
+	if svc.ScopesKnowledge() {
+		grantedGroups = groups
+	}
 	g.log.write(accessLog{
 		RequestID: reqID, Session: session, Run: run, Stage: stage, Service: name, Model: model,
+		Groups: grantedGroups,
 		Method: r.Method, Path: r.URL.Path, Upstream: target.Host,
 		Status: rec.status, ReqBytes: reqBytes, RespBytes: rec.bytes,
 		ReqBody: reqBody, RespBody: cap8k(rec.body),

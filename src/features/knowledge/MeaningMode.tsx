@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   GROUP_COLORS,
+  RELATION_GRANT,
   RELATION_STYLE,
   RELATION_TYPES,
   knowledge,
@@ -569,28 +570,35 @@ function Relations({
               </span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {RELATION_TYPES.map((t) => (
+              {RELATION_TYPES.map((rt) => (
                 <div
-                  key={t}
+                  key={rt}
                   onClick={
-                    busy || t === r.type
+                    busy || rt === r.type
                       ? undefined
-                      : () => onRun(() => knowledge.setRelationType(r.id, t as RelationType))
+                      : () => onRun(() => knowledge.setRelationType(r.id, rt as RelationType))
                   }
+                  title={t(`knowledge.meaning.grant.${RELATION_GRANT[rt]}`)}
                   style={{
                     font: "600 8.8px 'IBM Plex Mono'",
                     cursor: "pointer",
                     padding: "3px 6px",
                     borderRadius: 4,
-                    color: t === r.type ? RELATION_STYLE[t].color : "var(--tx-dim)",
-                    background: t === r.type ? "var(--bg-deep)" : "transparent",
-                    border: `1px solid ${t === r.type ? RELATION_STYLE[t].color : "var(--bd2)"}`,
+                    color: rt === r.type ? RELATION_STYLE[rt].color : "var(--tx-dim)",
+                    background: rt === r.type ? "var(--bg-deep)" : "transparent",
+                    border: `1px solid ${rt === r.type ? RELATION_STYLE[rt].color : "var(--bd2)"}`,
                   }}
                 >
-                  {t}
+                  {rt}
                 </div>
               ))}
             </div>
+            {/* What the chosen type actually does to a scope. An edge is drawn
+                as documentation and then quietly becomes a permission, so the
+                consequence belongs beside the choice rather than in a run. */}
+            <span style={{ font: "400 9px 'IBM Plex Sans'", color: "var(--tx-dim)", lineHeight: 1.5 }}>
+              {t(`knowledge.meaning.grant.${RELATION_GRANT[r.type]}`)}
+            </span>
           </div>
         );
       })}

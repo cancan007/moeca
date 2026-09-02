@@ -11,26 +11,38 @@ import (
 // accessLog is one structured request/response record. It feeds the app's Audit
 // view (A2A-style) and doubles as the request/response logging role.
 type accessLog struct {
-	Time         string `json:"time"`
-	RequestID    string `json:"requestId"`
-	Session      string `json:"session"`
-	Run          string `json:"run,omitempty"`   // ORCHESTRA run id (attribution)
-	Stage        string `json:"stage,omitempty"` // ORCHESTRA stage id (attribution)
-	Service      string `json:"service"`
-	Model        string `json:"model,omitempty"`
-	Method       string `json:"method"`
-	Path         string `json:"path"`
-	Upstream     string `json:"upstream,omitempty"`
-	Status       int    `json:"status"`
-	ReqBytes     int64  `json:"reqBytes"`
-	RespBytes    int64  `json:"respBytes"`
-	ReqBody      string `json:"reqBody,omitempty"`  // captured request content (capped)
-	RespBody     string `json:"respBody,omitempty"` // captured response content (capped)
-	DurationMs   int64  `json:"durationMs"`
-	TokensEst    int64  `json:"tokensEst,omitempty"`    // tokens charged to the budget (real usage or estimate)
-	InputTokens  int    `json:"inputTokens,omitempty"`  // real prompt tokens (model services)
-	OutputTokens int    `json:"outputTokens,omitempty"` // real completion tokens (model services)
-	Err          string `json:"err,omitempty"`
+	Time      string `json:"time"`
+	RequestID string `json:"requestId"`
+	Session   string `json:"session"`
+	Run       string `json:"run,omitempty"`   // ORCHESTRA run id (attribution)
+	Stage     string `json:"stage,omitempty"` // ORCHESTRA stage id (attribution)
+	Service   string `json:"service"`
+	// Groups is the retrieval entitlement this request carried, for services
+	// that enforce one. It is what the gateway INJECTED, not what the caller
+	// sent — the caller's own value is discarded before this is decided.
+	//
+	// Recorded because the log could otherwise say what a run reached but never
+	// what it was allowed to reach, and those are different questions. Answering
+	// "did this run stay in scope" from the second alone means reconstructing the
+	// grant from the graph as it is now, which is not the graph as it was then.
+	//
+	// nil for every other service, and for a session that stated no entitlement —
+	// which is a state those services refuse, so it appears only on the refusal.
+	Groups       []string `json:"groups,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	Method       string   `json:"method"`
+	Path         string   `json:"path"`
+	Upstream     string   `json:"upstream,omitempty"`
+	Status       int      `json:"status"`
+	ReqBytes     int64    `json:"reqBytes"`
+	RespBytes    int64    `json:"respBytes"`
+	ReqBody      string   `json:"reqBody,omitempty"`  // captured request content (capped)
+	RespBody     string   `json:"respBody,omitempty"` // captured response content (capped)
+	DurationMs   int64    `json:"durationMs"`
+	TokensEst    int64    `json:"tokensEst,omitempty"`    // tokens charged to the budget (real usage or estimate)
+	InputTokens  int      `json:"inputTokens,omitempty"`  // real prompt tokens (model services)
+	OutputTokens int      `json:"outputTokens,omitempty"` // real completion tokens (model services)
+	Err          string   `json:"err,omitempty"`
 }
 
 // logger writes access records as JSON lines and retains the most recent ones

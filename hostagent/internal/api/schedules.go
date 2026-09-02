@@ -397,7 +397,9 @@ func (s *Server) startRun(taskID, worktree string, spec json.RawMessage, groups 
 	// was compiled from, so the widening happens per stage rather than once for
 	// the run.
 	if scoped {
-		applyStageScopes(m, groups, s.expandGroups)
+		applyStageScopes(m, groups, s.expandGroups, func(stage string, base []string, depth int) {
+			logGrants("stage "+stage, s.expandGroupsExplained(base, depth))
+		})
 	}
 	// The schedule's knowledge scope, stated here rather than trusted from the
 	// stored spec: the schedule row is the authority on what it may read, and a

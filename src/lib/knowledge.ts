@@ -54,23 +54,48 @@ export interface KnowledgeGroup {
   sources: string[];
 }
 
+/** The link kinds the graph can draw, in descending order of what they grant.
+ *
+ *  The order is the point: the first three widen a scope, the last two do not,
+ *  and `references` — the type every new edge is created as — widens by one step
+ *  and cannot chain. The host agent holds the authoritative rules; this list
+ *  only has to agree with it about which types exist. */
 export const RELATION_TYPES = [
   "requires",
+  "derives-from",
+  "same-as",
+  "references",
   "supersedes",
   "conflicts-with",
-  "derives-from",
-  "references",
 ] as const;
 
 export type RelationType = (typeof RELATION_TYPES)[number];
 
-/** Colour and dash per relation type, so the canvas and the inspector agree. */
+/** Colour and dash per relation type, so the canvas and the inspector agree.
+ *
+ *  Solid means the edge widens a scope and may be followed onwards; dashed means
+ *  it widens by one step at most or not at all. Reading the canvas should tell
+ *  you which edges carry permission without opening anything. */
 export const RELATION_STYLE: Record<RelationType, { color: string; dash: string }> = {
   requires: { color: "var(--ac)", dash: "0" },
-  supersedes: { color: "var(--amber)", dash: "0" },
-  "conflicts-with": { color: "var(--red)", dash: "5 3" },
   "derives-from": { color: "var(--purple)", dash: "0" },
+  "same-as": { color: "var(--cyan)", dash: "0" },
   references: { color: "var(--tx-dim)", dash: "2 3" },
+  supersedes: { color: "var(--amber)", dash: "5 3" },
+  "conflicts-with": { color: "var(--red)", dash: "5 3" },
+};
+
+/** Whether a relation type widens a scope, and how far.
+ *
+ *  Display only — the host agent decides, and this exists so the canvas can say
+ *  what will happen rather than leaving it to be discovered from a run. */
+export const RELATION_GRANT: Record<RelationType, "chains" | "once" | "none"> = {
+  requires: "chains",
+  "derives-from": "chains",
+  "same-as": "chains",
+  references: "once",
+  supersedes: "none",
+  "conflicts-with": "none",
 };
 
 export interface KnowledgeRelation {

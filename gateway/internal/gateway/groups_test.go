@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -261,5 +262,80 @@ func TestScopesKnowledgeFollowsTheGroupsTemplate(t *testing.T) {
 	plain := config.Service{InjectHeaders: map[string]string{"Authorization": "Bearer ${SECRET}"}}
 	if plain.ScopesKnowledge() {
 		t.Error("a service with no ${GROUPS} template must not be treated as knowledge-scoped")
+	}
+}
+
+// The log has to be able to answer "what was this run allowed to reach", not
+// only "what did it reach". Reconstructing the grant from the graph afterwards
+// answers it against the graph as it is now, which is not the graph as it was
+// then — and a relation added since would make an old run look wrong.
+func TestTheGrantIsRecordedInTheLog(t *testing.T) {
+	var buf bytes.Buffer
+	up := groupsUpstream(t)
+	defer up.Close()
+	cfg := groupsConfig(up.URL, map[string]config.Session{
+		"tok": {ID: "run-1", Groups: []string{"grp-kon", "grp-media"}},
+	})
+	cfg.Services["anthropic"] = config.Service{
+		Prefix: "/anthropic/", Upstream: up.URL, Allowlist: []string{"127.0.0.1"}, Kind: "model",
+	}
+	srv := httptest.NewServer(New(cfg, &buf, nil, nil))
+	defer srv.Close()
+
+	do(t, srv, "POST", "/rag/search", map[string]string{SessionHeader: "tok"}, "{}").Body.Close()
+	do(t, srv, "POST", "/anthropic/v1/messages", map[string]string{SessionHeader: "tok"}, "{}").Body.Close()
+
+	var rag, model []string
+	seenModel := false
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var rec struct {
+			Service string   `json:"service"`
+			Groups  []string `json:"groups"`
+		}
+		if json.Unmarshal([]byte(line), &rec) != nil {
+			continue
+		}
+		if rec.Service == "rag" {
+			rag = rec.Groups
+		}
+		if rec.Service == "anthropic" {
+			model, seenModel = rec.Groups, true
+		}
+	}
+	if len(rag) != 2 || rag[0] != "grp-kon" {
+		t.Errorf("the retrieval record carried groups %v, want the injected entitlement", rag)
+	}
+	// Only where it meant something. A model call recording a permission it never
+	// consulted would make the one place it matters stop standing out.
+	if !seenModel {
+		t.Fatal("no record for the model call")
+	}
+	if model != nil {
+		t.Errorf("a model call recorded groups %v", model)
+	}
+}
+
+// A run refused for having stated no entitlement is the case someone will look
+// for, so the record has to be attributable to that run.
+func TestARefusedRunIsAttributableInTheLog(t *testing.T) {
+	var buf bytes.Buffer
+	up := groupsUpstream(t)
+	defer up.Close()
+	srv := httptest.NewServer(New(groupsConfig(up.URL, map[string]config.Session{
+		"unscoped": {ID: "run-9"},
+	}), &buf, nil, nil))
+	defer srv.Close()
+
+	do(t, srv, "POST", "/rag/search", map[string]string{
+		SessionHeader: "unscoped",
+		RunHeader:     "run-9",
+		StageHeader:   "sup-plan",
+	}, "{}").Body.Close()
+
+	if !strings.Contains(buf.String(), `"err":"scope_required"`) {
+		t.Fatalf("no refusal recorded: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), `"run":"run-9"`) || !strings.Contains(buf.String(), `"stage":"sup-plan"`) {
+		t.Errorf("the refusal is not attributable to its run/stage: %s", buf.String())
 	}
 }

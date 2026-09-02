@@ -906,7 +906,12 @@ export const ja = {
       memberProjects: "所属 PROJECT",
       noProjects: "project がありません。「所属割り振り」で作成してください。",
       multiProject: "group は複数の project に紐づけられます。",
-      relationNote: "relation は地図であり、権限ではありません。辿った先も、参照する側の group で必ず絞り込まれます。",
+      grant: {
+        chains: "スコープを広げます。この group を持つランは相手側にも到達し、そこから先へも辿れます。",
+        once: "スコープを1段だけ広げます。到達した先から先へは辿りません。",
+        none: "記述のみ。この辺はスコープを広げません。",
+      },
+      relationNote: "relation はエージェントが辿りうる地図です。それ自体は何も広げません（エージェント側に「関連の深さ」の付与が必要）が、辿られる場合にどこまで広がるかは下の型が決めます。",
       pickOtherGroup: "相手の GROUP を選択",
       fromThis: "この group →",
       toThis: "→ この group",
