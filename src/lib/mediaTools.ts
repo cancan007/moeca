@@ -28,6 +28,13 @@ export const MEDIA_TOOL_IDS = {
  *  is given, and it has no counterpart in the old media grant. */
 export const EDIT_IMAGE_TOOL_ID = "edit-image";
 
+/** Uploading a file so a later call can name it by id.
+ *
+ *  Not a generation grant: it makes nothing. It exists because one route —
+ *  video — takes its reference picture as an id rather than as a form part, and
+ *  an agent with no way to obtain an id cannot use a reference at all. */
+export const UPLOAD_FILE_TOOL_ID = "upload-file";
+
 export const MEDIA_EXTENSIONS = {
   image: [".png", ".jpg", ".jpeg", ".webp"],
   speech: [".mp3", ".wav", ".opus", ".flac"],
@@ -101,11 +108,19 @@ export function mediaToolPresets(prefix = DEFAULT_PREFIX): ToolDef[] {
       params: [
         { name: "prompt", type: "string", description: i18n.t("tools.media.video.prompt"), required: true },
         { name: "seconds", type: "string", description: i18n.t("tools.media.video.seconds"), required: false },
+        { name: "size", type: "string", description: i18n.t("tools.media.image.size"), required: false },
+        { name: "file_id", type: "string", description: i18n.t("tools.media.video.fileId"), required: false },
       ],
       method: "POST",
       path: prefix.replace(/\/$/, "") + DEFAULT_PATH.video,
       headers: {},
-      body: `{"model":"${DEFAULT_MODEL.video}","prompt":"{{prompt}}","seconds":"{{seconds}}"}`,
+      // input_reference is an OBJECT, not a file — the one place the video
+      // route differs from the edit routes beside it. Posting the picture as a
+      // form part is rejected ("expected an object, but got a file"), so the
+      // file is uploaded first with upload_file and named here by its id. The
+      // whole object disappears when no id is supplied, which is what makes the
+      // same tool still do text-to-video.
+      body: `{"model":"${DEFAULT_MODEL.video}","prompt":"{{prompt}}","seconds":"{{seconds}}","size":"{{size}}","input_reference":{"file_id":"{{file_id}}"}}`,
       targetHeader: "",
       output: {
         kind: "binary",
@@ -120,6 +135,24 @@ export function mediaToolPresets(prefix = DEFAULT_PREFIX): ToolDef[] {
           forSec: 45 * 60,
         },
       },
+    },
+    {
+      id: UPLOAD_FILE_TOOL_ID,
+      name: "upload_file",
+      description: i18n.t("tools.media.upload.description"),
+      params: [
+        { name: "file", type: "string", description: i18n.t("tools.media.upload.file"), required: true },
+        { name: "purpose", type: "string", description: i18n.t("tools.media.upload.purpose"), required: false },
+      ],
+      method: "POST",
+      path: prefix.replace(/\/$/, "") + "/v1/files",
+      headers: {},
+      body: `{"purpose":"{{purpose}}"}`,
+      targetHeader: "",
+      defaults: { purpose: "vision" },
+      inputs: { file: { as: "multipart", field: "file" } },
+      // Text, deliberately: the response is what the model needs to read. The
+      // id it returns is the only way to name this picture in a later call.
     },
     {
       id: EDIT_IMAGE_TOOL_ID,

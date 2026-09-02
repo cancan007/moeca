@@ -359,8 +359,49 @@ Which folders it may read is registered in Settings and held by the Tauri shell
 is a host action. Each folder is bind-mounted **read-only into the indexer and
 nowhere else** — never into a sandbox — so registering one grants *retrieval*
 through the gateway, not file access. A bind mount cannot be added to a running
-container, so changing the set restarts the indexer; it holds nothing durable, so
-that costs a re-index and nothing else.
+container, so changing the set restarts the indexer.
+
+That restart is cheap for the index itself — sources are the truth and rebuilding
+from them is always correct — but the container does hold three things across it,
+in a host volume: the embedded vectors (so a rebuild pays the provider only for
+text it has never seen), the image captions (same reason, a model call each), and
+the **group membership pushed from the host**. The last one is not derived state:
+the indexer cannot read the Knowledge graph — it is off that network, by the same
+design as everything else here — so if it forgets, it cannot find out again.
+Losing that directory is therefore a permissions event, not just a bill.
+
+### 7.1 Reachability is not entitlement
+
+Being able to call `/rag/search` says nothing about what it returns. A second
+layer decides that, and the two are deliberately separate.
+
+A task names a **node of the Knowledge graph** — an organization or a project —
+rather than a list of groups, because the groups under a node change as the graph
+is edited and a task that meant "this project's knowledge" should follow it. The
+host resolves that node to a group set **at launch**, the sandbox controller mints
+a gateway session carrying it, and the gateway states it to the indexer as a
+header it will not accept from anyone. The indexer filters chunks by it.
+
+Three properties hold that together:
+
+- **The caller never names its own entitlement.** The gateway discards any
+  inbound `X-Orchestra-Groups` and injects the session's own. A sandbox that
+  could name its groups could name all of them.
+- **A scope is absolute.** Nothing downstream widens it. Relations between groups
+  are documentation and grant nothing — they briefly did, bounded by a hop count
+  on the agent template, and the bound was the wrong kind of safety: a setting
+  owned by whoever wrote the agent could enlarge a boundary set by whoever wrote
+  the task. Widening is done where it can be seen, by putting a group in the
+  project.
+- **No scope means no retrieval, not all of it.** A session that never stated an
+  entitlement is refused (`403`), because the default a task is created with must
+  not also be the widest grant. Reaching the knowledge declared as everyone's is
+  the *global* scope, chosen explicitly, and it resolves to an empty group list —
+  which is why nil and empty are kept distinct the whole way down.
+
+What a run was entitled to is recorded in the access log beside what it actually
+retrieved. Reconstructing the grant afterwards would answer against the graph as
+it is *now*, and an edge drawn since would make a past run look wrong.
 
 ---
 

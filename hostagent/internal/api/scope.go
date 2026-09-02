@@ -3,7 +3,6 @@ package api
 import (
 	"log"
 	"net/http"
-	"strconv"
 
 	"orchestra/hostagent/internal/store"
 )
@@ -34,6 +33,9 @@ import (
 // knowledge declared as everyone's. Collapsing them would turn "nobody chose"
 // into "entitled to everything", which is the one default worth being careful
 // about — it is the state every task starts in.
+//
+// What this function returns is the whole of it. Nothing downstream adds a
+// group: see the note on relations below.
 
 // scopeGroups returns the groups a scope grants. The bool reports whether a
 // policy applies at all; false means an unscoped run.
@@ -86,144 +88,33 @@ func (s *Server) groupsForProjects(projects map[string]bool) []string {
 	return out
 }
 
-// Widening a scope along declared relations.
+// Relations do not widen a scope.
 //
-// A relation between two groups was documentation: "this one requires that
-// one", drawn on the Knowledge canvas and read by people. Treating it as a
-// grant is a deliberate change of meaning, and the reason it is safe is the
-// bound — an agent template says how many hops it may follow, and zero (the
-// default) keeps the old behaviour exactly. Without a bound, one edge added on
-// the canvas could quietly connect every group in the graph.
+// They did, briefly, bounded by a hop count an agent template carried. The bound
+// made it safe in the sense that it could not run away, but not in the sense
+// that mattered: the scope on a task states which groups its agents may reach,
+// and a second setting on a different screen — owned by whoever wrote the agent,
+// not by whoever set the scope — could enlarge it. A boundary that another
+// decision can move is not a boundary, and the task said "Kon_Tube" while
+// granting whatever the graph happened to connect.
 //
-// Traversal is DIRECTED, because that is how the edges were authored: "A
-// requires B" says reading A means also needing B, and says nothing about
-// reading B.
+// Measured on a real graph, one hop took a project's scope from 7 groups to 10
+// of the 11 that existed. That is the feature working as designed, which is the
+// argument against it.
 //
-// Which edges grant, and how far, is stated per type in relations.go rather
-// than as exceptions here. This function only walks what that table permits.
+// So a relation is documentation again, which is what it was before scopes
+// existed: it says how two bodies of knowledge stand to each other, it is drawn
+// and read by people, and it grants nothing. What a scope resolves to is final.
 
-// edge is one followable step, already resolved for direction.
-type edge struct {
-	to     string
-	typ    string
-	policy relationPolicy
-}
-
-// grant records why one group ended up in a scope: because it was named by the
-// scope itself, or because an edge of some type led to it from another group.
+// applyStageScopes writes the run's group set onto every stage.
 //
-// Kept because a scope that widens is a scope somebody will later ask about, and
-// "why was this group granted" cannot be answered from the resulting list. The
-// graph it was derived from will have moved on by the time anyone asks.
-type grant struct {
-	Group string
-	// Via is empty for a group the scope named directly.
-	Via  string // relation type
-	From string // the group the edge was followed from
-}
-
-// expandGroups returns seed plus every group reachable from it within depth
-// hops. depth <= 0 returns seed unchanged.
-func (s *Server) expandGroups(seed []string, depth int) []string {
-	out := make([]string, 0, len(seed))
-	for _, g := range s.expandGroupsExplained(seed, depth) {
-		out = append(out, g.Group)
-	}
-	return out
-}
-
-// logGrants records how a scope was arrived at, once, at the moment it is
-// applied to a run.
-//
-// The resulting group list cannot answer "why was this one included": a group
-// reached through two hops of `requires` looks exactly like one the project
-// named directly. Reconstructing it later means walking the graph as it is then,
-// which is not the graph the run was launched against — an edge drawn since
-// would make a past run look wrong, and an edge deleted since would make one
-// look inexplicable.
-func logGrants(what string, grants []grant) {
-	for _, g := range grants {
-		if g.Via == "" {
-			continue // named by the scope; nothing to explain
-		}
-		log.Printf("hostagent: %s: group %s granted via %s from %s", what, g.Group, g.Via, g.From)
-	}
-}
-
-// expandGroupsExplained is the same walk, keeping the derivation of each group.
-func (s *Server) expandGroupsExplained(seed []string, depth int) []grant {
-	grants := make([]grant, 0, len(seed))
-	seen := map[string]bool{}
-	frontier := make([]string, 0, len(seed))
-	for _, g := range seed {
-		if seen[g] {
-			continue
-		}
-		seen[g] = true
-		grants = append(grants, grant{Group: g})
-		frontier = append(frontier, g)
-	}
-	if depth <= 0 || len(seed) == 0 {
-		return grants
-	}
-
-	rels, err := s.store.KnowledgeRelations()
-	if err != nil {
-		// The scope itself still stands. Widening is an addition, and failing to
-		// read the additions must not lose what was already granted.
-		log.Printf("hostagent: reading knowledge relations: %v", err)
-		return grants
-	}
-	out := map[string][]edge{}
-	for _, r := range rels {
-		p := policyOf(r.Type)
-		if !p.Traverse {
-			continue
-		}
-		out[r.From] = append(out[r.From], edge{to: r.To, typ: r.Type, policy: p})
-		if p.Symmetric {
-			out[r.To] = append(out[r.To], edge{to: r.From, typ: r.Type, policy: p})
-		}
-	}
-
-	// Whether a group may be expanded FROM, which is not the same as whether it
-	// is granted. A group reached through a non-transitive edge is in the scope
-	// and is a dead end: "A references B" widens by one step, and following B's
-	// own mentions from there is how one edge connects a whole graph.
-	canExpand := map[string]bool{}
-	for _, g := range frontier {
-		canExpand[g] = true
-	}
-
-	for hop := 0; hop < depth && len(frontier) > 0; hop++ {
-		next := []string{}
-		for _, g := range frontier {
-			if !canExpand[g] {
-				continue
-			}
-			for _, e := range out[g] {
-				if seen[e.to] {
-					continue
-				}
-				seen[e.to] = true
-				grants = append(grants, grant{Group: e.to, Via: e.typ, From: g})
-				canExpand[e.to] = e.policy.Transitive
-				next = append(next, e.to)
-			}
-		}
-		frontier = next
-	}
-	return grants
-}
-
-// applyStageScopes writes each stage's own group set into the run spec.
-//
-// The base scope belongs to the schedule; the number of relation hops belongs
-// to the agent template a stage was compiled from. A run whose planner may
-// follow no relations and whose researcher may follow two is the ordinary case,
-// so the group set is decided per stage and the controller gives each stage the
-// session that matches.
-func applyStageScopes(spec map[string]any, base []string, expand func([]string, int) []string, explain func(stage string, base []string, depth int)) {
+// Every stage of a run gets the same reach, because the scope is the whole of
+// what a run may retrieve and nothing below it narrows or widens. The value is
+// still written per stage rather than left to be inherited: a stage carrying no
+// groups key falls back to the run's session, and "the same as the run" is worth
+// saying rather than inferring — the controller mints sessions from what it is
+// told, and silence there would be indistinguishable from an unscoped stage.
+func applyStageScopes(spec map[string]any, groups []string) {
 	stages, ok := spec["stages"].([]any)
 	if !ok {
 		return
@@ -233,21 +124,6 @@ func applyStageScopes(spec map[string]any, base []string, expand func([]string, 
 		if !ok {
 			continue
 		}
-		depth := 0
-		if d, ok := st["knowledgeDepth"].(float64); ok {
-			depth = int(d)
-		}
-		groups := expand(base, depth)
-		if depth > 0 {
-			// Per stage, because the hop bound is per stage: two stages of one run
-			// can hold different scopes, and a line naming only the run would not
-			// say which.
-			id, _ := st["id"].(string)
-			explain(id, base, depth)
-		}
-		// Always stated, even at depth 0 and even when it equals the run's own
-		// set: a stage with no groups key would fall back to the run session,
-		// and "same as the run" must be said rather than inferred.
 		st["groups"] = groups
 	}
 }
@@ -272,9 +148,5 @@ func (s *Server) handleKnowledgeScope(w http.ResponseWriter, r *http.Request) {
 	// of one answer, and they should not be able to disagree.
 	s.syncKnowledgeGroupsLogged("scope resolved")
 	groups, scoped := s.scopeGroups(&store.KnowledgeScope{Kind: kind, ID: q.Get("id")})
-	depth := 0
-	if d, err := strconv.Atoi(q.Get("depth")); err == nil {
-		depth = d
-	}
-	writeJSON(w, 200, map[string]any{"groups": s.expandGroups(groups, depth), "scoped": scoped})
+	writeJSON(w, 200, map[string]any{"groups": groups, "scoped": scoped})
 }

@@ -99,9 +99,7 @@ export const zh: Dict = {
     },
 
     agents: {
-      knowledgeDepth: "关联深度",
-      knowledgeDepthTip: "从范围出发可沿知识关联扩展的跳数。0（默认）不扩展。conflicts-with 不会被跟随。",
-      desc: "以三种粒度登记模板。先登记 Solo → 用 Static（Graph/Supervisor）进行组合 → 再由 Dynamic 动态选用。",
+          desc: "以三种粒度登记模板。先登记 Solo → 用 Static（Graph/Supervisor）进行组合 → 再由 Dynamic 动态选用。",
       soloTag: "单体专家",
       soloNote: "专注于单一角色的单体代理。不调用其他代理，只负责自身的专业领域。",
       registered: "已登记的代理",
@@ -783,12 +781,19 @@ export const zh: Dict = {
       speech: {
         description: "根据文本合成语音，并作为文件写入 /work。",
         text: "要朗读的文本。",
-        voice: "可选。音色名称（各提供方不同）。",
+        voice: "可选。须为提供方给出的音色名称本身。OpenAI 为 alloy / ash / ballad / cedar / coral / echo / fable / marin / nova / onyx / sage / shimmer / verse。「男性、沉稳、低沉」这类描述不是音色名称，会被拒绝；请选择最接近的名称（低沉可用 ash 或 onyx）。",
+      },
+      upload: {
+        description:
+          "上传 /work 中的文件并获取其 id。仅在某些路由以 id 指代文件（而非直接接收文件）时需要，generate_video 的参考图即属此类。请从响应中读取 `id`，并作为该调用的 file_id 传入。",
+        file: "要上传的文件路径（相对 /work）",
+        purpose: "可选。文件用途，默认为 vision，参考图即属此类。",
       },
       video: {
         description: "根据提示生成视频，并作为文件写入 /work。耗时数分钟，是最昂贵的工具。",
         prompt: "希望生成的视频内容。",
         seconds: "可选。时长（秒）。",
+        fileId: "可选。由 upload_file 获得的参考图 id。视频的外观与构图取自该图，动作由提示词决定；省略则为纯文本生成。图片分辨率须与 size 一致。",
       },
     },
     ragSearch: {
@@ -901,12 +906,15 @@ export const zh: Dict = {
       memberProjects: "所属 PROJECT",
       noProjects: "暂无 project。请在「归属分配」中创建。",
       multiProject: "group 可以关联到多个 project。",
-      grant: {
-        chains: "会扩大范围：持有该 group 的运行也能到达对方，并可继续向后延伸。",
-        once: "仅扩大一步，不会从到达处继续向后延伸。",
-        none: "仅作说明，该边不会扩大范围。",
+      means: {
+        needs: "理解该 group 需要对方。",
+        provenance: "该 group 由对方产生。",
+        identity: "同一份知识的两个名称。",
+        mention: "该 group 提及对方。最弱的主张，也是默认类型。",
+        replacement: "该 group 取代对方；对方是过时的一方。",
+        disagreement: "两者相互矛盾。同时取用两者的答案会把它们混在一起。",
       },
-      relationNote: "relation 是智能体可能沿用的地图。它本身不会扩大任何范围（需为智能体设置「关联深度」），但一旦被沿用，扩大到何处由下方的类型决定。",
+      relationNote: "relation 描述两个 group 之间的关系，不授予任何权限——任务可检索的范围仅由其 scope 决定。若要扩大，请将该 group 归入相应 project。",
       pickOtherGroup: "选择对方的 GROUP",
       fromThis: "该 group →",
       toThis: "→ 该 group",

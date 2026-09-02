@@ -52,7 +52,6 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
   const [useRag, setUseRag] = useState<boolean>(base?.useRag ?? false);
   // How far this agent may follow knowledge relations out of the task's scope.
   // Only meaningful with RAG: it widens what rag_search may reach.
-  const [knowledgeDepth, setKnowledgeDepth] = useState<string>(base?.knowledgeDepth != null ? String(base.knowledgeDepth) : "");
   // Media generation is no longer a switch here. Image, speech and video are
   // ordinary tools now (Settings → Tools), granted like any other, so this
   // screen has one list of capabilities instead of two that behaved
@@ -108,7 +107,6 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
       system: prompt || undefined, toolIds, useRag,
       // Only meaningful with RAG, and 0 is the same as unset — a stored zero
       // would claim a setting was made when nothing was.
-      knowledgeDepth: useRag ? positiveInt(knowledgeDepth) : undefined,
       web: web ? { ...web, maxUses: positiveInt(webMaxUses) } : undefined,
       // A command atom keeps its model fields (so switching back to "agent"
       // does not lose them) but they are dropped at compile time.
@@ -245,17 +243,6 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
               <div onClick={() => setUseRag((v) => !v)} title={t("settings.agents.ragTip")} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", font: "500 10.5px 'IBM Plex Mono'", color: useRag ? "#06121e" : "var(--tx3)", background: useRag ? "#67c9a4" : "var(--bg-card2)", border: `1px solid ${useRag ? "#67c9a4" : "var(--bd2)"}`, borderRadius: 7, padding: "5px 10px" }}>
                 {useRag ? "✓ " : ""}{t("settings.agents.ragLabel")}
               </div>
-              {useRag && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }} title={t("settings.agents.knowledgeDepthTip")}>
-                  <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.agents.knowledgeDepth")}</span>
-                  <input
-                    value={knowledgeDepth}
-                    onChange={(e) => setKnowledgeDepth(e.target.value)}
-                    placeholder="0"
-                    style={{ width: 46, background: "var(--bg-deep)", border: "1px solid var(--bd2)", borderRadius: 6, padding: "4px 7px", font: "400 10px 'IBM Plex Mono'", color: "var(--tx2)", outline: "none" }}
-                  />
-                </div>
-              )}
               <div
                 onClick={() => setWeb((w) => (w ? undefined : {}))}
                 title={t("settings.agents.webTip")}

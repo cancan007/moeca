@@ -99,9 +99,7 @@ export const en: Dict = {
     },
 
     agents: {
-      knowledgeDepth: "Relation hops",
-      knowledgeDepthTip: "How many knowledge relations this agent may follow out of the task's scope. 0 (the default) widens nothing. conflicts-with is never followed.",
-      desc: "Register templates at three granularities. Register Solos → combine them under Static (Graph/Supervisor) → let Dynamic pick between them at run time.",
+          desc: "Register templates at three granularities. Register Solos → combine them under Static (Graph/Supervisor) → let Dynamic pick between them at run time.",
       soloTag: "Single specialist",
       soloNote: "A single agent devoted to one role. It calls no one else and covers only its own specialty.",
       registered: "Registered agents",
@@ -783,12 +781,19 @@ export const en: Dict = {
       speech: {
         description: "Synthesise speech from text and write the audio into /work as a file.",
         text: "The text to speak.",
-        voice: "Optional voice name, provider-specific.",
+        voice: "Optional. One of the exact names the provider offers — for OpenAI: alloy, ash, ballad, cedar, coral, echo, fable, marin, nova, onyx, sage, shimmer, verse. A description like 'male, calm, low' is not a voice name and is rejected; pick the closest name instead (ash and onyx are the lower ones).",
+      },
+      upload: {
+        description:
+          "Upload a file from /work and get an id for it. Needed only where a route names a file by id instead of taking it directly — generate_video's reference image is the one. Read the `id` out of the response and pass it as that call's file_id.",
+        file: "Path of the file to upload, relative to /work",
+        purpose: "Optional. What the file is for; defaults to vision, which is what a reference image is.",
       },
       video: {
         description: "Generate a video from a prompt and write it into /work as a file. Takes minutes and is the most expensive tool available.",
         prompt: "What the video should show.",
         seconds: "Optional duration in seconds.",
+        fileId: "Optional. The id of a reference image, from upload_file. The video follows its look and composition; the prompt describes the motion. Omit it for text-only generation. The image must match the size given here.",
       },
     },
     ragSearch: {
@@ -906,12 +911,15 @@ export const en: Dict = {
       memberProjects: "MEMBER PROJECTS",
       noProjects: "No projects. Create one under Membership.",
       multiProject: "A group can belong to several projects.",
-      grant: {
-        chains: "Widens a scope: a run holding this group also reaches the other, and onward from there.",
-        once: "Widens a scope by one step only — it cannot be followed onward from what it reaches.",
-        none: "Documentation only. This edge never widens a scope.",
+      means: {
+        needs: "This group needs the other to be understood.",
+        provenance: "This group was produced from the other.",
+        identity: "Two names for one body of knowledge.",
+        mention: "This group mentions the other. The weakest claim, and the default.",
+        replacement: "This group replaces the other; the other is the outdated one.",
+        disagreement: "The two disagree. An answer drawn from both would blend them.",
       },
-      relationNote: "A relation is a map that some agents may follow. It widens nothing on its own — an agent has to be given relation hops — but where it is followed, the type below decides how far.",
+      relationNote: "A relation says how two groups stand to each other. It grants nothing: what a task may retrieve is decided by its scope alone. To widen a scope, put the group in the project.",
       pickOtherGroup: "Select the other GROUP",
       fromThis: "this group →",
       toThis: "→ this group",

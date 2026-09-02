@@ -77,9 +77,6 @@ function stageFromSolo(
     // a stage carries one list of tools rather than a list plus a media block
     // that only one vendor's API shape fitted.
     tools,
-    // How far this stage may follow knowledge relations. Carried as a number
-    // and resolved to groups host-side, where the graph is.
-    knowledgeDepth: solo.knowledgeDepth,
     // Web search only exists in the Anthropic dialect. Compiling the grant onto
     // an OpenAI or Gemini stage would put a tool in the run spec that neither
     // side executes, so the stage is compiled honestly: no grant, and the agent

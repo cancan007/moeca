@@ -6,9 +6,9 @@ import (
 	"orchestra/hostagent/internal/store"
 )
 
-// Relations were documentation — "this one requires that one" — and reading
-// them as grants is only safe because of the bound. Without it, one edge drawn
-// on the canvas could connect every group in the graph.
+// Relations are documentation — "this one requires that one" — and grant
+// nothing. A scope states which groups a task's agents may reach, and it is the
+// whole of what they may reach.
 
 // relServer builds four groups and returns their real ids: an id is a slug of
 // the name, and relations carry a foreign key onto it.
@@ -36,84 +36,112 @@ func rel(t *testing.T, s *Server, from, to, typ string) {
 	}
 }
 
-func TestRelationDepthBoundsTheWidening(t *testing.T) {
+// project makes an organization and a project to scope to, returning its id.
+// The membership tables carry foreign keys, so a scope naming a project that
+// does not exist is a write error rather than an empty scope.
+func project(t *testing.T, s *Server) string {
+	t.Helper()
+	org, err := s.store.AddKnowledgeOrg("org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prj, err := s.store.AddKnowledgeProject("prj", org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return prj.ID
+}
+
+// The scope is absolute: no edge, of any type, adds a group to it.
+//
+// This is the property the whole permission model rests on. It briefly did not
+// hold — relations widened a scope, bounded by a hop count set on the agent
+// template — and the bound was the wrong kind of safety. A task said "Kon_Tube"
+// while a setting on another screen decided how much more than Kon_Tube it
+// meant.
+func TestNoRelationTypeWidensAScope(t *testing.T) {
+	for _, typ := range []string{"requires", "derives-from", "same-as", "references", "supersedes", "conflicts-with"} {
+		t.Run(typ, func(t *testing.T) {
+			s, id := relServer(t)
+			prj := project(t, s)
+			rel(t, s, id["a"], id["b"], typ)
+			if err := s.store.SetKnowledgeGroupProjects(id["a"], []string{prj}); err != nil {
+				t.Fatal(err)
+			}
+			got, scoped := s.scopeGroups(&store.KnowledgeScope{Kind: "project", ID: prj})
+			if !scoped {
+				t.Fatal("a project scope should be scoped")
+			}
+			if len(got) != 1 || got[0] != id["a"] {
+				t.Errorf("scope resolved to %v — a %s edge widened it", got, typ)
+			}
+		})
+	}
+}
+
+// A chain of the strongest edge type is still no wider than the scope. Depth
+// was the control that made this vary; there is no such control any more.
+func TestAChainOfRequiresWidensNothing(t *testing.T) {
 	s, id := relServer(t)
 	rel(t, s, id["a"], id["b"], "requires")
 	rel(t, s, id["b"], id["c"], "requires")
 	rel(t, s, id["c"], id["d"], "requires")
+	prj := project(t, s)
+	if err := s.store.SetKnowledgeGroupProjects(id["a"], []string{prj}); err != nil {
+		t.Fatal(err)
+	}
 
-	cases := map[int]int{0: 1, 1: 2, 2: 3, 3: 4, 9: 4}
-	for depth, want := range cases {
-		if got := s.expandGroups([]string{id["a"]}, depth); len(got) != want {
-			t.Errorf("depth %d reached %v, want %d groups", depth, got, want)
+	got, _ := s.scopeGroups(&store.KnowledgeScope{Kind: "project", ID: prj})
+	if len(got) != 1 {
+		t.Errorf("scope resolved to %v, want only the group the project serves", got)
+	}
+}
+
+// What a scope DOES grant is every group serving the named project — which is
+// the mechanism for widening: put the group in the project, deliberately, where
+// the person who owns the scope can see it.
+func TestAScopeGrantsEveryGroupServingTheProject(t *testing.T) {
+	s, id := relServer(t)
+	prj := project(t, s)
+	for _, n := range []string{"a", "b"} {
+		if err := s.store.SetKnowledgeGroupProjects(id[n], []string{prj}); err != nil {
+			t.Fatal(err)
 		}
 	}
-}
-
-// The edge that warns must not also grant: pulling in knowledge declared to
-// contradict the scope would blend both into one answer without saying so.
-func TestConflictsWithIsNeverFollowed(t *testing.T) {
-	s, id := relServer(t)
-	rel(t, s, id["a"], id["b"], "conflicts-with")
-	got := s.expandGroups([]string{id["a"]}, 5)
-	if len(got) != 1 || got[0] != id["a"] {
-		t.Errorf("expand = %v, want only the seed", got)
-	}
-}
-
-// Edges were authored with a direction: "A requires B" says nothing about
-// reading B.
-func TestExpansionFollowsTheEdgeDirection(t *testing.T) {
-	s, id := relServer(t)
-	rel(t, s, id["a"], id["b"], "requires")
-	if got := s.expandGroups([]string{id["b"]}, 3); len(got) != 1 {
-		t.Errorf("expand from the target = %v, want only the seed", got)
-	}
-}
-
-// A cycle must terminate, and must not repeat a group.
-func TestExpansionTerminatesOnACycle(t *testing.T) {
-	s, id := relServer(t)
-	rel(t, s, id["a"], id["b"], "requires")
-	rel(t, s, id["b"], id["a"], "requires")
-	got := s.expandGroups([]string{id["a"]}, 10)
+	got, _ := s.scopeGroups(&store.KnowledgeScope{Kind: "project", ID: prj})
 	if len(got) != 2 {
-		t.Errorf("expand = %v, want each group once", got)
+		t.Errorf("scope resolved to %v, want both groups serving the project", got)
 	}
 }
 
-// Widening an empty scope must stay empty: "entitled to nothing" has no seed to
-// follow relations from, and inventing one would grant what was refused.
-func TestExpandingAnEmptyScopeGrantsNothing(t *testing.T) {
-	s, id := relServer(t)
-	rel(t, s, id["a"], id["b"], "requires")
-	if got := s.expandGroups([]string{}, 5); len(got) != 0 {
-		t.Errorf("expand = %v, want none", got)
-	}
-}
-
-// Each stage carries its own resolved set, including at depth 0 — a stage with
-// no groups key would fall back to the run's session, so "same as the run" has
-// to be stated rather than inferred.
-func TestStageScopesAreStatedPerStage(t *testing.T) {
+// Every stage gets the same reach, and gets it stated rather than inherited: a
+// stage carrying no groups key falls back to the run's session, and the
+// controller cannot tell that apart from an unscoped stage.
+func TestEveryStageIsGivenTheRunsScope(t *testing.T) {
 	spec := map[string]any{"stages": []any{
 		map[string]any{"id": "plan"},
-		map[string]any{"id": "research", "knowledgeDepth": float64(2)},
+		map[string]any{"id": "research"},
 	}}
-	applyStageScopes(spec, []string{"a"}, func(seed []string, depth int) []string {
-		if depth == 0 {
-			return seed
+	applyStageScopes(spec, []string{"a", "b"})
+	for _, raw := range spec["stages"].([]any) {
+		st := raw.(map[string]any)
+		got, ok := st["groups"].([]string)
+		if !ok || len(got) != 2 {
+			t.Errorf("stage %v groups = %v", st["id"], st["groups"])
 		}
-		return append(append([]string{}, seed...), "widened")
-	}, func(string, []string, int) {})
-	stages := spec["stages"].([]any)
-	plan := stages[0].(map[string]any)["groups"].([]string)
-	research := stages[1].(map[string]any)["groups"].([]string)
-	if len(plan) != 1 {
-		t.Errorf("plan groups = %v, want the base scope", plan)
 	}
-	if len(research) != 2 {
-		t.Errorf("research groups = %v, want the widened scope", research)
+}
+
+// A scope granting nothing is still stated, on every stage. Empty is the global
+// scope — entitled to the knowledge declared as everyone's — and a stage with no
+// key at all would be read as having asked for no policy.
+func TestAnEmptyScopeIsStillStated(t *testing.T) {
+	spec := map[string]any{"stages": []any{map[string]any{"id": "plan"}}}
+	applyStageScopes(spec, []string{})
+	st := spec["stages"].([]any)[0].(map[string]any)
+	got, ok := st["groups"].([]string)
+	if !ok || got == nil || len(got) != 0 {
+		t.Errorf("groups = %#v, want a stated empty set", st["groups"])
 	}
 }
 

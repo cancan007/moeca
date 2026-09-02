@@ -484,6 +484,36 @@ var unfilled = regexp.MustCompile(`^\{\{[A-Za-z0-9_.-]+\}\}$`)
 // "{{size}}" — which providers reject, or worse, accept as a nonsense value.
 // An omitted optional parameter has to mean "do not send this field", which is
 // what every one of these APIs expects.
+// pruneObject removes the keys an unsupplied argument left behind, in place,
+// and reports whether it removed any.
+//
+// It recurses, because a provider that wants a nested object wants it absent
+// rather than present and hollow: `"input_reference":{"file_id":"{{file_id}}"}`
+// with no file_id must vanish, not arrive as `{"file_id":""}`. A nested object
+// emptied by that pruning goes too — an object with nothing in it says the
+// caller supplied one, which is exactly the claim being retracted.
+func pruneObject(doc map[string]any) bool {
+	changed := false
+	for k, v := range doc {
+		switch t := v.(type) {
+		case string:
+			if t == "" || unfilled.MatchString(t) {
+				delete(doc, k)
+				changed = true
+			}
+		case map[string]any:
+			if pruneObject(t) {
+				changed = true
+			}
+			if len(t) == 0 {
+				delete(doc, k)
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
 func pruneBody(body string) string {
 	if strings.TrimSpace(body) == "" {
 		return body
@@ -492,18 +522,7 @@ func pruneBody(body string) string {
 	if err := json.Unmarshal([]byte(body), &doc); err != nil {
 		return body // not a JSON object: a template we have no business editing
 	}
-	changed := false
-	for k, v := range doc {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
-		if s == "" || unfilled.MatchString(s) {
-			delete(doc, k)
-			changed = true
-		}
-	}
-	if !changed {
+	if !pruneObject(doc) {
 		return body
 	}
 	out, err := json.Marshal(doc)

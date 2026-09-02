@@ -10,17 +10,22 @@ import { compileRef, buildRunSpec, DYNAMIC_REF, type TemplateStores } from "@/li
 import { compileRouter } from "./compileTemplate";
 
 /**
- * Resolve each stage's knowledge scope before a Delivery run starts.
+ * Resolve a Delivery task's knowledge scope before its run starts.
  *
- * The task names a node of the Knowledge graph; each stage says how many
- * relations it may follow out of it. Both are resolved by the host agent, which
- * owns the graph — computing it here would mean two implementations of "what
- * does project X grant", and they would drift.
+ * The task names a node of the Knowledge graph, and the host agent resolves it —
+ * computing it here would mean two implementations of "what does project X
+ * grant", and they would drift.
  *
- * A task with no scope resolves to nothing at all, and that is now a real
- * answer rather than an absent one: the run carries no entitlement, and the
- * gateway refuses it the indexer. Reading the knowledge shared with everyone is
- * the Global scope, which a person chooses.
+ * Every stage gets the same reach. The scope is the whole of what the run may
+ * retrieve: nothing below it narrows or widens, and relations grant nothing. It
+ * is still written onto each stage rather than left to be inherited, because a
+ * stage carrying no groups key falls back to the run's session and the
+ * controller cannot tell that apart from an unscoped stage.
+ *
+ * A task with no scope resolves to nothing at all, and that is a real answer
+ * rather than an absent one: the run carries no entitlement, and the gateway
+ * refuses it the indexer. Reading the knowledge shared with everyone is the
+ * Global scope, which a person chooses.
  */
 async function withStageScopes(
   stages: RunStage[],
@@ -35,21 +40,16 @@ async function withStageScopes(
   }
   if (!meta.scope) return { stages, runGroups: null };
 
-  // One request per distinct depth: stages usually share one.
-  const depths = [...new Set(stages.map((st) => st.knowledgeDepth ?? 0))];
-  const resolved = new Map<number, string[]>();
-  for (const d of depths) {
-    try {
-      const r = await delivery.resolveScope(meta.scope, d);
-      resolved.set(d, r.groups ?? []);
-    } catch {
-      // A scope that cannot be resolved must not widen into "everything".
-      resolved.set(d, []);
-    }
+  let groups: string[];
+  try {
+    groups = (await delivery.resolveScope(meta.scope)).groups ?? [];
+  } catch {
+    // A scope that cannot be resolved must not widen into "everything".
+    groups = [];
   }
   return {
-    stages: stages.map((st) => ({ ...st, groups: resolved.get(st.knowledgeDepth ?? 0) ?? [] })),
-    runGroups: resolved.get(0) ?? [],
+    stages: stages.map((st) => ({ ...st, groups })),
+    runGroups: groups,
   };
 }
 

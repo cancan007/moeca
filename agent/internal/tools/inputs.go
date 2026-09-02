@@ -21,8 +21,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
+	"net/http"
+	"net/textproto"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -60,16 +64,26 @@ func (t HTTPTool) wantsMultipart() bool {
 	return false
 }
 
+// inputFile is one uploaded file: its bytes, and the name it had on disk.
+//
+// The name travels because a multipart part carries one, and the parameter name
+// is not it. A provider deciding what it has been sent looks at the filename and
+// the part's content type; "image" with no extension tells it nothing.
+type inputFile struct {
+	name string
+	data []byte
+}
+
 // readInputs loads the files a call refers to, keyed by parameter name.
 //
 // The paths come from the model, so they go through the same guard as every
 // other file tool: a parameter that names a file is still a path an agent
 // chose.
-func (r *Registry) readInputs(t HTTPTool, args map[string]any) (map[string][]byte, error) {
+func (r *Registry) readInputs(t HTTPTool, args map[string]any) (map[string]inputFile, error) {
 	if !t.hasFileInputs() {
 		return nil, nil
 	}
-	out := map[string][]byte{}
+	out := map[string]inputFile{}
 	for name, in := range t.Inputs {
 		rel := strings.TrimSpace(str(args, name))
 		if rel == "" {
@@ -97,7 +111,7 @@ func (r *Registry) readInputs(t HTTPTool, args map[string]any) (map[string][]byt
 		if len(b) == 0 {
 			return nil, fmt.Errorf("%s is empty", rel)
 		}
-		out[name] = b
+		out[name] = inputFile{name: filepath.Base(rel), data: b}
 	}
 	return out, nil
 }
@@ -121,9 +135,9 @@ func (r *Registry) buildBody(t HTTPTool, args map[string]any) (io.Reader, string
 		for k, v := range args {
 			subArgs[k] = v
 		}
-		for name, b := range files {
+		for name, f := range files {
 			if t.Inputs[name].As == inputBase64 {
-				subArgs[name] = b64(b)
+				subArgs[name] = b64(f.data)
 			}
 		}
 	}
@@ -145,7 +159,7 @@ func (r *Registry) buildBody(t HTTPTool, args map[string]any) (io.Reader, string
 // tool that posts `{"model":"gpt-image-1","prompt":"{{prompt}}"}` should say the
 // same thing whether or not it also uploads a picture, and the author should
 // not have to write it twice.
-func buildMultipart(t HTTPTool, body string, files map[string][]byte) (io.Reader, string, error) {
+func buildMultipart(t HTTPTool, body string, files map[string]inputFile) (io.Reader, string, error) {
 	fields := map[string]any{}
 	if strings.TrimSpace(body) != "" {
 		if err := json.Unmarshal([]byte(body), &fields); err != nil {
@@ -174,11 +188,21 @@ func buildMultipart(t HTTPTool, body string, files map[string][]byte) (io.Reader
 		if field == "" {
 			field = name
 		}
-		part, err := w.CreateFormFile(field, name)
+		f := files[name]
+		// Not CreateFormFile: it hardcodes application/octet-stream and takes the
+		// filename from whatever it is handed. Both mattered — a provider decides
+		// what it has been sent from the part's content type and its filename, and
+		// "image" with no extension typed as a byte stream is rejected by every
+		// image endpoint there is. This is what made every edit route fail with
+		// "unsupported mimetype" on a file that was perfectly valid on disk.
+		h := make(textproto.MIMEHeader)
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, field, f.name))
+		h.Set("Content-Type", contentTypeOf(f))
+		part, err := w.CreatePart(h)
 		if err != nil {
 			return nil, "", err
 		}
-		if _, err := part.Write(files[name]); err != nil {
+		if _, err := part.Write(f.data); err != nil {
 			return nil, "", err
 		}
 	}
@@ -199,7 +223,32 @@ func sortedAnyKeys(m map[string]any) []string {
 	return out
 }
 
-func sortedByteKeys(m map[string][]byte) []string {
+// contentTypeOf types an upload by what it contains, falling back to what it is
+// called.
+//
+// Content first: the bytes are the fact, and a file named .jpg that is a PNG
+// should be sent as what it is. The extension is the fallback for formats the
+// sniffer does not know, and octet-stream the last resort — which at least says
+// "unknown" rather than asserting something false.
+func contentTypeOf(f inputFile) string {
+	if ct := http.DetectContentType(f.data); ct != "" && !strings.HasPrefix(ct, "application/octet-stream") {
+		// DetectContentType appends a charset for text; a form part does not
+		// want one and providers match on the bare type.
+		if i := strings.IndexByte(ct, ';'); i >= 0 {
+			ct = strings.TrimSpace(ct[:i])
+		}
+		return ct
+	}
+	if ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(f.name))); ct != "" {
+		if i := strings.IndexByte(ct, ';'); i >= 0 {
+			ct = strings.TrimSpace(ct[:i])
+		}
+		return ct
+	}
+	return "application/octet-stream"
+}
+
+func sortedByteKeys(m map[string]inputFile) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

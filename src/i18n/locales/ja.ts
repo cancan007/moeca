@@ -102,9 +102,7 @@ export const ja = {
     },
 
     agents: {
-      knowledgeDepth: "関連の深さ",
-      knowledgeDepthTip: "スコープから knowledge の relation を何ホップ辿って参照を広げるか。0（既定）は広げません。conflicts-with は辿りません。",
-      desc: "3つの粒度でテンプレートを登録。Solo を登録 → Static（Graph/Supervisor）で組み合わせ → Dynamic で動的に使い分けます。",
+          desc: "3つの粒度でテンプレートを登録。Solo を登録 → Static（Graph/Supervisor）で組み合わせ → Dynamic で動的に使い分けます。",
       soloTag: "単体専門家",
       soloNote: "1つの役割に特化した単体エージェント。他を呼ばず、自身の専門領域のみを担当します。",
       registered: "登録済みエージェント",
@@ -786,12 +784,19 @@ export const ja = {
       speech: {
         description: "テキストから音声を合成し、/work にファイルとして書き出す。",
         text: "読み上げるテキスト。",
-        voice: "任意。音声名（プロバイダ固有）。",
+        voice: "任意。プロバイダが提供する音声名そのもの。OpenAI なら alloy / ash / ballad / cedar / coral / echo / fable / marin / nova / onyx / sage / shimmer / verse。「男性・落ち着いた・低め」のような説明文は音声名ではなく拒否されるので、近い名前を選ぶこと（低めは ash か onyx）。",
+      },
+      upload: {
+        description:
+          "/work のファイルをアップロードして id を得る。ファイルを直接渡すのではなく id で指すルートでのみ必要で、該当するのは generate_video の参照画像。レスポンスの `id` を読み取り、その呼び出しの file_id に渡すこと。",
+        file: "アップロードするファイルのパス（/work 相対）",
+        purpose: "任意。用途。既定は vision で、参照画像はこれに当たる。",
       },
       video: {
         description: "指示から動画を生成し、/work にファイルとして書き出す。数分かかり、最も高価なツール。",
         prompt: "生成したい動画の内容。",
         seconds: "任意。長さ（秒）。",
+        fileId: "任意。upload_file で得た参照画像の id。動画の見た目・構図はこの画像に、動きはプロンプトに従う。省略すればテキストのみの生成。画像は size と同じ解像度である必要がある。",
       },
     },
     ragSearch: {
@@ -906,12 +911,15 @@ export const ja = {
       memberProjects: "所属 PROJECT",
       noProjects: "project がありません。「所属割り振り」で作成してください。",
       multiProject: "group は複数の project に紐づけられます。",
-      grant: {
-        chains: "スコープを広げます。この group を持つランは相手側にも到達し、そこから先へも辿れます。",
-        once: "スコープを1段だけ広げます。到達した先から先へは辿りません。",
-        none: "記述のみ。この辺はスコープを広げません。",
+      means: {
+        needs: "この group を理解するには相手が必要、という主張です。",
+        provenance: "この group は相手から作られた、という主張です。",
+        identity: "同一のナレッジに対する2つの名前です。",
+        mention: "この group が相手に言及している、という主張です。最も弱く、既定の型です。",
+        replacement: "この group が相手を置き換えます。相手は古い方です。",
+        disagreement: "両者は食い違います。両方から作った答えは、それを混ぜたものになります。",
       },
-      relationNote: "relation はエージェントが辿りうる地図です。それ自体は何も広げません（エージェント側に「関連の深さ」の付与が必要）が、辿られる場合にどこまで広がるかは下の型が決めます。",
+      relationNote: "relation は2つの group の関係を述べるものです。権限は与えません — タスクが参照できる範囲は scope だけが決めます。広げたい場合は、その group を project に所属させてください。",
       pickOtherGroup: "相手の GROUP を選択",
       fromThis: "この group →",
       toThis: "→ この group",

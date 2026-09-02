@@ -105,12 +105,12 @@ export const delivery = {
       body: JSON.stringify({ repo, branch, base: base ?? "" }),
     }),
   /** A Delivery task's goal + milestones + assigned template (by repo/branch). */
-  /** Resolve a scope node (plus relation hops) to the groups it grants. The
+  /** Resolve a scope node to the groups it grants. The
    *  host owns the graph, so both screens ask it rather than each computing a
    *  different answer for "project X". */
-  resolveScope: (scope: KnowledgeScope | undefined, depth: number) => {
+  resolveScope: (scope: KnowledgeScope | undefined) => {
     if (!scope) return Promise.resolve<{ groups: string[] | null; scoped: boolean }>({ groups: null, scoped: false });
-    const q = new URLSearchParams({ kind: scope.kind, id: scope.id ?? "", depth: String(depth) });
+    const q = new URLSearchParams({ kind: scope.kind, id: scope.id ?? "" });
     return req<{ groups: string[] | null; scoped: boolean }>(`/knowledge/scope?${q}`);
   },
   getTaskMeta: (repo: string, branch: string) =>

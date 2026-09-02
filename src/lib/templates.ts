@@ -79,7 +79,6 @@ export interface SoloAgent {
    *  A relation was documentation — "this one requires that one" — and reading
    *  it as a grant is only safe because of this bound: without it, a single
    *  edge drawn on the canvas could connect every group in the graph. */
-  knowledgeDepth?: number;
   /** When set, this agent gets a web_search tool. The search itself runs on the
    *  model provider's side — the sandbox gets no route to the web — but it is
    *  still an explicit grant: searches cost money per use, and an agent that was

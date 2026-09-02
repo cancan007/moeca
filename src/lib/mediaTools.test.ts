@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { migrateMediaGrants, mediaToolPresets, MEDIA_TOOL_IDS, EDIT_IMAGE_TOOL_ID } from "./mediaTools";
+import { migrateMediaGrants, mediaToolPresets, MEDIA_TOOL_IDS, EDIT_IMAGE_TOOL_ID, UPLOAD_FILE_TOOL_ID } from "./mediaTools";
 import type { SoloAgent } from "@/lib/templates";
 import type { ToolDef } from "@/lib/tools";
 
@@ -79,10 +79,30 @@ describe("shipped presets", () => {
     expect(video.output?.poll?.done).toEqual(["completed"]);
   });
 
+  // Every preset that WRITES a file says what it may be called. Not every preset
+  // writes one: upload_file hands its response back to the model, because the id
+  // in it is the whole point of the call.
   it("constrain the extension a generated file may land under", () => {
-    for (const t of mediaToolPresets()) {
+    const writers = mediaToolPresets().filter((t) => t.output);
+    expect(writers.length).toBeGreaterThan(0);
+    for (const t of writers) {
       expect(t.output?.extensions?.length).toBeGreaterThan(0);
     }
+  });
+
+  // The video route names its reference picture by id rather than taking the
+  // file, so the tool that produces an id has to exist alongside it — and the
+  // reference has to vanish entirely when none is given, or text-to-video breaks.
+  it("pair the video tool with the upload that feeds it", () => {
+    const presets = mediaToolPresets();
+    const upload = presets.find((t) => t.id === UPLOAD_FILE_TOOL_ID);
+    expect(upload, "upload_file must ship").toBeTruthy();
+    expect(upload?.inputs?.file?.as).toBe("multipart");
+    expect(upload?.output, "upload_file returns its response, it does not write a file").toBeUndefined();
+
+    const video = presets.find((t) => t.id === MEDIA_TOOL_IDS.video)!;
+    expect(video.body).toContain('"input_reference":{"file_id":"{{file_id}}"}');
+    expect(video.params.some((p) => p.name === "file_id" && !p.required)).toBe(true);
   });
 });
 

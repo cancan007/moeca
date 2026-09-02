@@ -213,3 +213,135 @@ func TestATextToolCanUploadAFile(t *testing.T) {
 		t.Error("no file part was sent")
 	}
 }
+
+// What a provider actually receives for an uploaded file.
+//
+// Every image edit route rejects a part typed application/octet-stream, and the
+// filename is the other half of how it decides what it was sent. Both were wrong
+// — CreateFormFile hardcodes the type and was being handed the PARAMETER name —
+// so every edit call failed with "unsupported mimetype" on a file that was
+// perfectly valid on disk. Nothing caught it because the tests asserted the file
+// arrived, not how it was labelled.
+func TestAnUploadedFileIsTypedAndNamed(t *testing.T) {
+	// A real JPEG header, so the sniffer has something to recognise.
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F'}, make([]byte, 600)...)
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "refs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "refs", "kon_sitting.jpg"), jpeg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotType, gotDisposition string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mr, err := r.MultipartReader()
+		if err != nil {
+			t.Errorf("not a multipart request: %v", err)
+			return
+		}
+		for {
+			p, err := mr.NextPart()
+			if err != nil {
+				break
+			}
+			if p.FormName() == "image" {
+				gotType = p.Header.Get("Content-Type")
+				gotDisposition = p.Header.Get("Content-Disposition")
+			}
+		}
+		w.Write([]byte(`{"data":[{"b64_json":"aGk="}]}`))
+	}))
+	defer srv.Close()
+
+	r := New(dir)
+	r.SetHTTP(srv.URL, llm.GatewayCtx{}, []HTTPTool{{
+		Name:   "edit_image",
+		Method: "POST",
+		Path:   "/v1/images/edits",
+		Body:   `{"model":"gpt-image-1","prompt":"{{prompt}}"}`,
+		Inputs: map[string]ToolInput{"image": {As: "multipart", Field: "image"}},
+		Output: &ToolOutput{Kind: "base64", JSONPath: "data.0.b64_json", Extensions: []string{".png"}},
+	}})
+	out, isErr := r.Dispatch("edit_image", map[string]any{
+		"image":  "refs/kon_sitting.jpg",
+		"prompt": "remove the watermark",
+		"path":   "out.png",
+	})
+	if isErr {
+		t.Fatalf("call failed: %s", out)
+	}
+
+	if gotType != "image/jpeg" {
+		t.Errorf("Content-Type = %q, want image/jpeg — octet-stream is what every image route rejects", gotType)
+	}
+	// The file's own name, not the parameter's: a provider that falls back to
+	// the extension has nothing to read in "image".
+	if !strings.Contains(gotDisposition, `filename="kon_sitting.jpg"`) {
+		t.Errorf("Content-Disposition = %q, want the file's own name", gotDisposition)
+	}
+}
+
+// Content decides, not the extension: a file misnamed .jpg that is really a PNG
+// is sent as what it is.
+func TestAnUploadIsTypedByItsContentNotItsName(t *testing.T) {
+	png := append([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}, make([]byte, 600)...)
+	if got := contentTypeOf(inputFile{name: "lying.jpg", data: png}); got != "image/png" {
+		t.Errorf("contentTypeOf = %q, want image/png", got)
+	}
+}
+
+// A format the sniffer does not know falls back to the name, and to a bare type
+// with no charset — a form part does not want one and providers match on the
+// bare value.
+func TestAnUnsniffableUploadFallsBackToItsExtension(t *testing.T) {
+	got := contentTypeOf(inputFile{name: "caption.vtt", data: []byte("WEBVTT\n\n00:00.000 --> 00:01.000\nhi\n")})
+	if strings.Contains(got, ";") {
+		t.Errorf("contentTypeOf = %q, want no charset parameter", got)
+	}
+	if got == "application/octet-stream" {
+		t.Errorf("contentTypeOf = %q, want the extension's type", got)
+	}
+}
+
+// A provider that wants a nested object wants it absent rather than present and
+// hollow. Sora's input_reference is the case: with no reference supplied,
+// `{"file_id":""}` is rejected, and the tool has to be usable without one.
+func TestAnUnfilledNestedObjectIsRemoved(t *testing.T) {
+	got := pruneBody(`{"model":"sora-2","prompt":"a dog","input_reference":{"file_id":"{{file_id}}"}}`)
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(got), &doc); err != nil {
+		t.Fatalf("pruned body is not JSON: %v", err)
+	}
+	if _, present := doc["input_reference"]; present {
+		t.Errorf("input_reference survived unfilled: %s", got)
+	}
+	if doc["prompt"] != "a dog" {
+		t.Errorf("pruning took a supplied value: %s", got)
+	}
+}
+
+// And when it is supplied, the object stays whole.
+func TestAFilledNestedObjectSurvives(t *testing.T) {
+	got := pruneBody(`{"model":"sora-2","prompt":"a dog","input_reference":{"file_id":"file-abc123"}}`)
+	var doc map[string]any
+	json.Unmarshal([]byte(got), &doc)
+	ref, ok := doc["input_reference"].(map[string]any)
+	if !ok || ref["file_id"] != "file-abc123" {
+		t.Errorf("a supplied reference was altered: %s", got)
+	}
+}
+
+// An object that is emptied by pruning goes too: an object with nothing in it
+// still says the caller supplied one, which is the claim being retracted.
+func TestAnObjectEmptiedByPruningIsRemoved(t *testing.T) {
+	got := pruneBody(`{"a":"kept","nested":{"x":"","y":"{{unset}}"}}`)
+	var doc map[string]any
+	json.Unmarshal([]byte(got), &doc)
+	if _, present := doc["nested"]; present {
+		t.Errorf("an emptied object survived: %s", got)
+	}
+	if doc["a"] != "kept" {
+		t.Errorf("pruning took a supplied value: %s", got)
+	}
+}

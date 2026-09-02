@@ -31,7 +31,6 @@ export interface RunStage {
   media?: MediaTools;
   /** How far this stage may follow knowledge relations out of the task's scope.
    *  Resolved to a concrete group set host-side before the run starts. */
-  knowledgeDepth?: number;
   /** This stage's resolved knowledge scope. Absent falls back to the run's. */
   groups?: string[];
   /** Web search grant. Unlike every other tool, the agent does not perform this

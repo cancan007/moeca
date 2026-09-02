@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   GROUP_COLORS,
-  RELATION_GRANT,
+  RELATION_MEANING,
   RELATION_STYLE,
   RELATION_TYPES,
   knowledge,
@@ -578,7 +578,7 @@ function Relations({
                       ? undefined
                       : () => onRun(() => knowledge.setRelationType(r.id, rt as RelationType))
                   }
-                  title={t(`knowledge.meaning.grant.${RELATION_GRANT[rt]}`)}
+                  title={t(`knowledge.meaning.means.${RELATION_MEANING[rt]}`)}
                   style={{
                     font: "600 8.8px 'IBM Plex Mono'",
                     cursor: "pointer",
@@ -593,11 +593,11 @@ function Relations({
                 </div>
               ))}
             </div>
-            {/* What the chosen type actually does to a scope. An edge is drawn
-                as documentation and then quietly becomes a permission, so the
-                consequence belongs beside the choice rather than in a run. */}
+            {/* What the chosen type asserts. It is a claim about the two bodies
+                of knowledge, not a permission — the task's scope decides what is
+                reachable, and no edge changes it. */}
             <span style={{ font: "400 9px 'IBM Plex Sans'", color: "var(--tx-dim)", lineHeight: 1.5 }}>
-              {t(`knowledge.meaning.grant.${RELATION_GRANT[r.type]}`)}
+              {t(`knowledge.meaning.means.${RELATION_MEANING[r.type]}`)}
             </span>
           </div>
         );

@@ -172,11 +172,24 @@ function loadTemplates(): TemplatesBlob {
     const persistedProviders = parsed.providers ?? defaults.providers;
     const haveNames = new Set(persistedProviders.map((p) => p.name));
     const providers = [...persistedProviders, ...defaults.providers.filter((p) => !haveNames.has(p.name))];
+    // The same union for built-in tools, by id, and for the same reason: a tool
+    // shipped after someone's store was first written would otherwise never
+    // reach them. It appeared exactly once — a video route needed an upload step
+    // to exist before a reference picture could be named, and the step could not
+    // be delivered to anyone who already had the app.
+    //
+    // Only ADDS. A preset already present is left exactly as it is, because by
+    // then it may have been edited, and replacing an operator's tool definition
+    // to correct our own wording is not a trade worth making. Correcting a
+    // shipped preset therefore reaches existing installs only if they reset it.
+    const persistedTools = parsed.tools ?? defaults.tools;
+    const haveIds = new Set(persistedTools.map((x) => x.id));
+    const tools = [...persistedTools, ...defaults.tools.filter((x) => !haveIds.has(x.id))];
     const blob: TemplatesBlob = {
       solos: (parsed.solos ?? defaults.solos).map(normSolo),
       staticTpls: parsed.staticTpls ?? defaults.staticTpls,
       providers,
-      tools: parsed.tools ?? defaults.tools,
+      tools,
       dynamicPrompt: parsed.dynamicPrompt ?? defaults.dynamicPrompt,
       globalPrompt: parsed.globalPrompt ?? defaults.globalPrompt,
     };

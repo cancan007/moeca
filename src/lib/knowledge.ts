@@ -54,12 +54,10 @@ export interface KnowledgeGroup {
   sources: string[];
 }
 
-/** The link kinds the graph can draw, in descending order of what they grant.
+/** The link kinds the graph can draw, strongest claim first.
  *
- *  The order is the point: the first three widen a scope, the last two do not,
- *  and `references` — the type every new edge is created as — widens by one step
- *  and cannot chain. The host agent holds the authoritative rules; this list
- *  only has to agree with it about which types exist. */
+ *  Ordering is for reading, not for permission: none of these widen a scope.
+ *  The host agent decides which types exist; this list only has to agree. */
 export const RELATION_TYPES = [
   "requires",
   "derives-from",
@@ -73,9 +71,10 @@ export type RelationType = (typeof RELATION_TYPES)[number];
 
 /** Colour and dash per relation type, so the canvas and the inspector agree.
  *
- *  Solid means the edge widens a scope and may be followed onwards; dashed means
- *  it widens by one step at most or not at all. Reading the canvas should tell
- *  you which edges carry permission without opening anything. */
+ *  Solid for the edges that assert a positive relationship, dashed for the ones
+ *  that qualify or warn. None of them carry permission — a scope is the whole of
+ *  what a run may reach — so the styling says what the edge means and nothing
+ *  about what it grants. */
 export const RELATION_STYLE: Record<RelationType, { color: string; dash: string }> = {
   requires: { color: "var(--ac)", dash: "0" },
   "derives-from": { color: "var(--purple)", dash: "0" },
@@ -85,19 +84,19 @@ export const RELATION_STYLE: Record<RelationType, { color: string; dash: string 
   "conflicts-with": { color: "var(--red)", dash: "5 3" },
 };
 
-/** Whether a relation type widens a scope, and how far.
+/** What each relation type asserts. Vocabulary, not permission.
  *
- *  Display only — the host agent decides, and this exists so the canvas can say
- *  what will happen rather than leaving it to be discovered from a run. */
-export const RELATION_GRANT: Record<RelationType, "chains" | "once" | "none"> = {
-  requires: "chains",
-  "derives-from": "chains",
-  "same-as": "chains",
-  references: "once",
-  supersedes: "none",
-  "conflicts-with": "none",
+ *  Relations grant nothing: a task's scope is the whole of what its agents may
+ *  reach. This exists so the canvas can say what an edge means, which is the
+ *  only thing it does. */
+export const RELATION_MEANING: Record<RelationType, string> = {
+  requires: "needs",
+  "derives-from": "provenance",
+  "same-as": "identity",
+  references: "mention",
+  supersedes: "replacement",
+  "conflicts-with": "disagreement",
 };
-
 export interface KnowledgeRelation {
   id: string;
   from: string;
