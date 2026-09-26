@@ -33,7 +33,8 @@ type Stage struct {
 	Name  string `json:"name"`
 	Role  string `json:"role"`
 	Model string `json:"model"` // ORCHESTRA_MODEL (optional)
-	// Provider is the LLM dialect (anthropic|openai|gemini) → ORCHESTRA_PROVIDER;
+	// Provider is the LLM dialect (anthropic|openai|openai-responses|gemini) →
+	// ORCHESTRA_PROVIDER;
 	// ProviderPrefix is the gateway route for it (e.g. "/openai/"). Together they
 	// point the agent at the right gateway provider. Empty => default (anthropic).
 	Provider       string `json:"provider"`

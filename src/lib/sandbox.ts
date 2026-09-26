@@ -16,7 +16,8 @@ export interface RunStage {
   effort?: string;
   /** Per-response output-token cap. Omit => the agent default (16000). */
   maxTokens?: number;
-  /** LLM dialect (anthropic|openai|gemini) and its gateway route prefix. */
+  /** LLM dialect (anthropic|openai|openai-responses|gemini) and its gateway
+   * route prefix. */
   provider: string;
   providerPrefix: string;
   system: string;

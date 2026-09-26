@@ -18,10 +18,17 @@ type Provider interface {
 }
 
 // Provider kinds (matches ORCHESTRA_PROVIDER / the gateway service Kind).
+//
+// KindOpenAIResponses is OpenAI's second endpoint, not a second vendor: same
+// host, same key, same gateway route shape. It is a kind of its own because the
+// dialect differs (items rather than messages) and because which endpoint a
+// model needs is not something the agent can infer — the reasoning-first models
+// only work there. See openai_responses.go.
 const (
-	KindAnthropic = "anthropic"
-	KindOpenAI    = "openai"
-	KindGemini    = "gemini"
+	KindAnthropic       = "anthropic"
+	KindOpenAI          = "openai"
+	KindOpenAIResponses = "openai-responses"
+	KindGemini          = "gemini"
 )
 
 // Gateway headers the agent sends. SessionHeader authenticates to the gateway;
@@ -65,6 +72,8 @@ func NewProvider(kind, base string, gctx GatewayCtx, httpClient *http.Client) Pr
 	switch strings.ToLower(kind) {
 	case KindOpenAI:
 		return &openAIClient{baseURL: base, gctx: gctx, http: httpClient}
+	case KindOpenAIResponses:
+		return &openAIResponsesClient{baseURL: base, gctx: gctx, http: httpClient}
 	case KindGemini:
 		return &geminiClient{baseURL: base, gctx: gctx, http: httpClient}
 	default:

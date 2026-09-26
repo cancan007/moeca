@@ -6,9 +6,12 @@ import { isDesktop, type ProviderInput } from "@/lib/providers";
 
 /* ─── helpers ─── */
 
+// Same host and same credential for both OpenAI dialects — they differ only in
+// which endpoint the agent posts to (/v1/chat/completions vs /v1/responses).
 const dialectInject: Record<string, Record<string, string>> = {
   anthropic: { "x-api-key": "${SECRET}", "anthropic-version": "2023-06-01" },
   openai: { Authorization: "Bearer ${SECRET}" },
+  "openai-responses": { Authorization: "Bearer ${SECRET}" },
   gemini: { "x-goog-api-key": "${SECRET}" },
 };
 
@@ -99,6 +102,7 @@ function ProviderModal({ base, onClose }: { base: ProviderInput | null; onClose:
                 <select value={dialect} onChange={(e) => onDialect(e.target.value)} style={{ ...mono, colorScheme: "dark", cursor: "pointer" }}>
                   <option value="anthropic">anthropic</option>
                   <option value="openai">openai</option>
+                  <option value="openai-responses">openai-responses</option>
                   <option value="gemini">gemini</option>
                 </select>
               </Lbl>

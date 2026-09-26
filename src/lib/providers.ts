@@ -6,8 +6,12 @@ import i18n from "@/i18n";
 export interface ProviderInput {
   name: string;
   kind: string; // "model" | "tool"
-  /** Agent wire format for model providers: "anthropic" | "openai" | "gemini".
-   * Gateway-agnostic (it just proxies); used client-side to pick the dialect. */
+  /** Agent wire format for model providers: "anthropic" | "openai" |
+   * "openai-responses" | "gemini". Gateway-agnostic (it just proxies); used
+   * client-side to pick the dialect. The two OpenAI values share a host and a
+   * key and differ only in endpoint — the reasoning-first models (gpt-6-astra)
+   * need "openai-responses", which is the only one that can combine their
+   * reasoning with function tools. */
   dialect?: string;
   prefix: string; // gateway route, e.g. "/openai/"
   upstream: string;

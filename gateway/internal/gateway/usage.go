@@ -15,6 +15,12 @@ import (
 //	Anthropic: usage.input_tokens / usage.output_tokens
 //	OpenAI:    usage.prompt_tokens / usage.completion_tokens
 //	Gemini:    usageMetadata.promptTokenCount / usageMetadata.candidatesTokenCount
+//
+// OpenAI's two endpoints do not agree with each other: /v1/responses reports
+// usage.input_tokens / usage.output_tokens, the same names Anthropic uses. A
+// provider routed for that dialect therefore needs its own entry — reading it
+// with the Chat Completions names finds nothing, and a budget that cannot see
+// the tokens is a budget that never triggers.
 
 // usageKeys names a dialect's usage fields. total is the reported sum where the
 // provider publishes one; it is what lets a response with no output side be
@@ -24,9 +30,10 @@ type usageKeys struct{ in, out, total string }
 // dialectKeys maps a routed service name to its usage field names. Names line up
 // with the llm.Kind* constants and the default gateway config service keys.
 var dialectKeys = map[string]usageKeys{
-	"anthropic": {"input_tokens", "output_tokens", ""},
-	"openai":    {"prompt_tokens", "completion_tokens", "total_tokens"},
-	"gemini":    {"promptTokenCount", "candidatesTokenCount", "totalTokenCount"},
+	"anthropic":        {"input_tokens", "output_tokens", ""},
+	"openai":           {"prompt_tokens", "completion_tokens", "total_tokens"},
+	"openai-responses": {"input_tokens", "output_tokens", "total_tokens"},
+	"gemini":           {"promptTokenCount", "candidatesTokenCount", "totalTokenCount"},
 }
 
 // allDialects is the fallback probe order for custom-named providers.

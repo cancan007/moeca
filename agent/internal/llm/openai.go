@@ -86,7 +86,11 @@ func oaEffort(effort string) string {
 //
 // Matched by prefix because the versioned ids move ("o3", "o3-2025-04-16") far
 // faster than this file does.
-var reasoningModels = []string{"o1", "o3", "o4", "gpt-5"}
+//
+// The list is shared with the Responses dialect, which reads it as "does this
+// model reason at all" — the two endpoints spell the argument differently
+// (reasoning_effort vs reasoning.effort) but agree on which models have one.
+var reasoningModels = []string{"o1", "o3", "o4", "gpt-5", "gpt-6"}
 
 // acceptsEffort reports whether a model takes the reasoning_effort argument.
 //
