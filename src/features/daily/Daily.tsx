@@ -887,6 +887,7 @@ export function Daily() {
               <div style={legendItem}><div style={legendDot("#7c5cff")} />video</div>
               <div style={legendItem}><div style={legendDot("#34d3e0")} />image</div>
               <div style={legendItem}><div style={legendDot("#5b9fe8")} />text</div>
+              <div style={legendItem}><div style={legendDot("#e0654e")} />pdf</div>
               <div style={legendItem}><div style={legendDot("#e0a83e")} />voice</div>
             </div>
           )}

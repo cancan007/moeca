@@ -496,7 +496,7 @@ export const ja = {
     manualEditNote: "手動修正は worktree に直接書き込まれ、CI 再実行の対象になります",
     saveToWorktree: "worktree に保存",
 
-    kind: { image: "画像", video: "動画", audio: "音声", text: "テキスト", file: "ファイル" },
+    kind: { image: "画像", video: "動画", audio: "音声", text: "テキスト", pdf: "PDF", file: "ファイル" },
     artifactsFailed: "成果物を取得できません",
     noArtifacts: "このタスクの worktree にはまだ成果物がありません。",
     noArtifactsHint:
@@ -664,6 +664,9 @@ export const ja = {
     scrollV: "縦スクロール",
     preview: "プレビュー",
     source: "ソース",
+    previewSandboxed: "隔離フレームで表示（スクリプトは実行されません）",
+    fullscreen: "全画面",
+    shrink: "縮小",
     hasReview: "レビュープロセスあり",
     needsReview: "要レビュー",
 

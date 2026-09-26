@@ -493,7 +493,7 @@ export const en: Dict = {
     manualEditNote: "Manual edits are written straight into the worktree and are subject to a CI re-run",
     saveToWorktree: "Save to the worktree",
 
-    kind: { image: "Image", video: "Video", audio: "Audio", text: "Text", file: "File" },
+    kind: { image: "Image", video: "Video", audio: "Audio", text: "Text", pdf: "PDF", file: "File" },
     artifactsFailed: "Could not fetch artifacts",
     noArtifacts: "This task's worktree has no artifacts yet.",
     noArtifactsHint:
@@ -661,6 +661,9 @@ export const en: Dict = {
     scrollV: "Scroll down",
     preview: "Preview",
     source: "Source",
+    previewSandboxed: "Shown in an isolated frame — scripts do not run",
+    fullscreen: "Full screen",
+    shrink: "Shrink",
     hasReview: "has a review step",
     needsReview: "needs review",
 

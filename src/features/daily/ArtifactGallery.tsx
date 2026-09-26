@@ -1,6 +1,8 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { daily as dailyApi, type Artifact, type ScheduleRun } from "@/lib/daily";
+import { markdownDocument } from "@/lib/markdown";
+import { useStore } from "@/store/useStore";
 
 // The Daily gallery: what the scheduled runs actually produced, where you review
 // it and take it away.
@@ -14,12 +16,23 @@ import { daily as dailyApi, type Artifact, type ScheduleRun } from "@/lib/daily"
 // host agent only serves media inline and hands back everything else as a
 // download; this component mirrors that split rather than trying to render
 // whatever arrives.
+//
+// Two text formats are worth more than a wall of characters, though — a report
+// is written as .md and a diagram as .html — so those are rendered, in a
+// sandboxed frame that keeps the "never inline" rule intact. See previewFormat
+// and ArtifactModal. PDFs need no such care: they were always on the host's
+// inline allowlist, so they render the way the media does.
+//
+// All three show on the CARD as well as in the detail view, because a grid of
+// cards that all read "TEXT" cannot be read at all — same argument as the image
+// and video thumbnails.
 
 const KIND_COLOR: Record<Artifact["kind"], string> = {
   video: "#7c5cff",
   image: "#34d3e0",
   audio: "#e0a83e",
   text: "#5b9fe8",
+  pdf: "#e0654e",
   file: "#8fa3b8",
 };
 
@@ -50,6 +63,10 @@ const cardMeta: CSSProperties = { padding: "10px 11px", display: "flex", flexDir
 const cardTitle: CSSProperties = { font: "600 11.5px 'IBM Plex Sans'", color: "var(--tx)", lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 const cardSub: CSSProperties = { font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-dim)" };
 const cornerDot = (bg: string): CSSProperties => ({ position: "absolute", left: 7, top: 7, width: 8, height: 8, borderRadius: 2, background: bg });
+/** A document thumbnail: the real file, rendered at full size and cropped to the
+ *  card. Not scaled down — a legible first line identifies a report, a shrunken
+ *  whole page does not. pointerEvents:none keeps the card clickable through it. */
+const docThumb = (bg: string): CSSProperties => ({ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", background: bg });
 
 /** Exported so the schedule editor lists attachment sizes the same way the
  *  gallery lists artifact sizes — the two are files of the same run. */
@@ -57,6 +74,58 @@ export function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** How a text artifact is worth showing. "plain" is .txt/.json/.csv/.yaml —
+ *  monospace is already the right answer for those, so they get no toggle. */
+type PreviewFormat = "markdown" | "html" | "plain";
+
+function previewFormat(name: string): PreviewFormat {
+  const ext = name.toLowerCase().slice(name.lastIndexOf("."));
+  if (ext === ".md" || ext === ".markdown") return "markdown";
+  if (ext === ".html" || ext === ".htm") return "html";
+  return "plain";
+}
+
+/** How much of a text artifact a card thumbnail reads.
+ *
+ *  A card shows the top ~96px of the document, so the rest of a long report is
+ *  bytes nobody looks at. The artifact route answers byte ranges (it is
+ *  http.ServeFile), which is what keeps a gallery of fifty reports from
+ *  downloading all fifty in full to draw their corners. */
+const THUMB_BYTES = 16 * 1024;
+
+/** The head of a text artifact, for a card thumbnail. Returns null until it
+ *  arrives, and stays null for artifacts that do not want one. */
+function useTextHead(url: string, enabled: boolean): string | null {
+  const [head, setHead] = useState<string | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    fetch(url, { headers: { Range: `bytes=0-${THUMB_BYTES - 1}` } })
+      .then((r) => r.text())
+      .then((text) => { if (!cancelled) setHead(text); })
+      // A thumbnail is not worth an error state: the card falls back to its
+      // extension label, which is what it showed before any of this existed.
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [url, enabled]);
+  return head;
+}
+
+/** Rendered/source switch. Same shape as the one in Daily's schedule editor;
+ *  duplicated rather than shared because Daily imports this file, not the other
+ *  way round. */
+function modeToggle(active: boolean): CSSProperties {
+  return {
+    font: "600 10px 'IBM Plex Mono'",
+    color: active ? "var(--ac)" : "var(--tx-dim)",
+    padding: "5px 9px",
+    borderRadius: 6,
+    background: active ? "var(--tint-active)" : "var(--bg-card2)",
+    border: `1px solid ${active ? "var(--tint-active-bd)" : "var(--bd2)"}`,
+    cursor: "pointer",
+  };
 }
 
 function shortTime(iso: string): string {
@@ -452,8 +521,21 @@ function ArtifactCard({ item, onOpen, picked = false, onToggle }: {
   onToggle?: () => void;
 }) {
   const { art, run } = item;
+  const theme = useStore((s) => s.theme);
   const color = KIND_COLOR[art.kind];
   const sub = `${shortTime(art.modTime)} · ${run.name}`;
+  const src = dailyApi.artifactUrl(run.id, art.path);
+
+  // A .md or .html card shows the document itself, for the same reason the image
+  // card shows the image: a grid of cards reading "TEXT" tells you nothing about
+  // which report is which, and the title is the one thing worth seeing at a
+  // glance. .txt/.json/.csv keep their extension label — monospace data has no
+  // recognisable top, so a thumbnail of it is just grey.
+  const format = previewFormat(art.name);
+  const wantsDocThumb = art.kind === "text" && format !== "plain";
+  const head = useTextHead(src, wantsDocThumb);
+  const thumbDoc = head == null ? null : format === "markdown" ? markdownDocument(head, theme, true) : head;
+
   return (
     <div
       onClick={onOpen}
@@ -507,6 +589,26 @@ function ArtifactCard({ item, onOpen, picked = false, onToggle }: {
               </div>
             </div>
           </>
+        ) : art.kind === "pdf" ? (
+          // The first page, rendered by the webview's own PDF viewer. The route
+          // already serves .pdf inline (artifacts.go inlineTypes), so this is the
+          // file itself rather than a picture of it.
+          <div style={docThumb("#fff")}>
+            <embed src={src} type="application/pdf" style={{ width: "100%", height: 300, display: "block" }} />
+          </div>
+        ) : thumbDoc != null ? (
+          // Same sandboxed frame as the detail preview, cropped to the card: no
+          // scripts, unique origin, and no clicks of its own so the card still
+          // opens on a click anywhere over it.
+          <div style={docThumb(format === "html" ? "#fff" : "var(--bg-deep)")}>
+            <iframe
+              title={art.name}
+              srcDoc={thumbDoc}
+              sandbox=""
+              scrolling="no"
+              style={{ width: "100%", height: 300, border: 0, display: "block" }}
+            />
+          </div>
         ) : (
           <span style={{ font: "500 10px 'IBM Plex Mono'", color: "var(--tx-faint)", textTransform: "uppercase" }}>
             {art.name.split(".").pop()}
@@ -528,7 +630,41 @@ function ArtifactModal({ item, onClose, onDeleted }: { item: Item; onClose: () =
   const { t } = useTranslation();
   const { art, run } = item;
   const src = dailyApi.artifactUrl(run.id, art.path);
+  const theme = useStore((s) => s.theme);
   const [text, setText] = useState<string | null>(null);
+  const format = previewFormat(art.name);
+  // Rendered by default: a report is written to be read, and its source is one
+  // click away. "plain" has no rendered form, so the switch never appears.
+  const [mode, setMode] = useState<"rendered" | "raw">("rendered");
+  // Full screen is per-viewing, not remembered: it is a property of the file
+  // being looked at (a report wants the room, a thumbnail does not), and the
+  // next artifact opened is usually a different kind of thing.
+  const [full, setFull] = useState(false);
+  // flex shorthand used by every preview below: fill the panel in full screen,
+  // keep its own height when windowed. Basis 0 rather than auto, so a long
+  // document does not push the panel past the viewport before it scrolls.
+  const grow = full ? "1 1 0" : "none";
+
+  // Escape steps out one level at a time. It matters more here than in the
+  // windowed modal, where the backdrop is always there to click: in full screen
+  // there is no backdrop left, so without this the only way out is the ✕.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      if (full) setFull(false);
+      else onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full, onClose]);
+
+  // What the preview frame is given. Markdown becomes a themed document;
+  // .html IS the document and goes in as written.
+  const doc = useMemo(
+    () => (text == null ? null : format === "markdown" ? markdownDocument(text, theme) : text),
+    [text, format, theme],
+  );
 
   useEffect(() => {
     if (art.kind !== "text") return;
@@ -544,8 +680,18 @@ function ArtifactModal({ item, onClose, onDeleted }: { item: Item; onClose: () =
   }, [src, art.kind]);
 
   return (
-    <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(6,8,11,.62)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 32 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 860, maxWidth: "100%", maxHeight: "100%", background: "var(--bg-panel)", border: "1px solid var(--bd)", borderRadius: 14, boxShadow: "0 24px 80px rgba(0,0,0,.5)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(6,8,11,.62)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: full ? 0 : 32 }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: full ? "100%" : 860, maxWidth: "100%", height: full ? "100%" : undefined, maxHeight: "100%",
+          background: "var(--bg-panel)",
+          border: full ? "none" : "1px solid var(--bd)",
+          borderRadius: full ? 0 : 14,
+          boxShadow: full ? "none" : "0 24px 80px rgba(0,0,0,.5)",
+          display: "flex", flexDirection: "column", overflow: "hidden",
+        }}
+      >
         <div style={{ padding: "15px 20px", borderBottom: "1px solid var(--bd)", display: "flex", alignItems: "center", gap: 11, flex: "none" }}>
           <div style={{ width: 9, height: 9, borderRadius: 2, background: KIND_COLOR[art.kind] }} />
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
@@ -568,30 +714,89 @@ function ArtifactModal({ item, onClose, onDeleted }: { item: Item; onClose: () =
             busyLabel={t("common.loading")}
             onConfirm={() => dailyApi.deleteArtifact(run.id, art.path).then(() => { onDeleted?.(item); onClose(); }).catch(() => {})}
           />
+          <div
+            onClick={() => setFull((v) => !v)}
+            title={t(full ? "daily.shrink" : "daily.fullscreen")}
+            style={{ cursor: "pointer", color: "var(--tx2)", font: "400 13px 'IBM Plex Sans'", width: 28, height: 28, borderRadius: 7, border: "1px solid var(--bd2)", background: "var(--bg-card2)", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}
+          >
+            {full ? "⤡" : "⤢"}
+          </div>
           <div onClick={onClose} style={{ cursor: "pointer", color: "var(--tx-mut)", font: "400 19px 'IBM Plex Sans'", padding: "0 4px" }}>✕</div>
         </div>
 
-        <div style={{ minHeight: 0, display: "flex", flexDirection: "column" }}>
+        {/* In full screen the preview takes the room the panel gained; windowed,
+            each kind keeps the height it had. "grow" is the single switch. */}
+        <div style={{ flex: full ? 1 : "none", minHeight: 0, display: "flex", flexDirection: "column" }}>
           {art.kind === "video" && (
-            <video src={src} controls style={{ width: "100%", maxHeight: 460, background: "#000" }} />
+            <video src={src} controls style={{ width: "100%", flex: grow, minHeight: 0, maxHeight: full ? "100%" : 460, background: "#000" }} />
           )}
           {art.kind === "audio" && (
-            <div style={{ padding: "28px 22px", background: AUDIO_GRAD }}>
+            <div style={{ padding: "28px 22px", background: AUDIO_GRAD, flex: grow, minHeight: 0, display: "flex", alignItems: "center" }}>
               <audio src={src} controls style={{ width: "100%" }} />
             </div>
           )}
           {art.kind === "image" && (
-            <div style={{ padding: 18, maxHeight: 500, overflow: "auto", display: "flex", justifyContent: "center", background: "var(--bg-deep)" }}>
-              <img src={src} alt={art.name} style={{ maxWidth: "100%", objectFit: "contain" }} />
+            <div style={{ padding: 18, flex: grow, minHeight: 0, maxHeight: full ? "none" : 500, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-deep)" }}>
+              <img src={src} alt={art.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
             </div>
           )}
+          {art.kind === "pdf" && (
+            // The webview's own PDF viewer, pointed at the inline route. Unlike
+            // .md/.html this is not fetched and re-rendered: .pdf was already on
+            // the host's inline allowlist (artifacts.go), so it is served and
+            // displayed exactly as the media above it — no new decision about
+            // what may render, and nothing of the document runs in this origin.
+            <iframe
+              title={art.name}
+              src={src}
+              style={{ width: "100%", flex: grow, height: full ? "auto" : 520, border: 0, display: "block", background: "#fff" }}
+            />
+          )}
           {art.kind === "text" && (
-            <pre style={{ margin: 0, height: 440, overflow: "auto", padding: "18px 22px", font: "400 11.5px/1.6 'IBM Plex Mono'", color: "var(--tx2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-              {text ?? t("common.loading")}
-            </pre>
+            <div style={{ display: "flex", flexDirection: "column", flex: grow, minHeight: 0 }}>
+              {format !== "plain" && (
+                <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--bd)", display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+                  <span style={{ font: "400 10px 'IBM Plex Mono'", color: "var(--tx-faint)", letterSpacing: "0.5px", flex: "none" }}>
+                    FORMAT: {format.toUpperCase()}
+                  </span>
+                  {mode === "rendered" && (
+                    <span style={{ font: "400 10px 'IBM Plex Sans'", color: "var(--tx-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {t("daily.previewSandboxed")}
+                    </span>
+                  )}
+                  <div style={{ flex: 1 }} />
+                  <div onClick={() => setMode("rendered")} style={modeToggle(mode === "rendered")}>{t("daily.preview")}</div>
+                  <div onClick={() => setMode("raw")} style={modeToggle(mode === "raw")}>{t("daily.source")}</div>
+                </div>
+              )}
+              {format !== "plain" && mode === "rendered" && doc != null ? (
+                // The frame carries NO sandbox tokens, which is the whole point.
+                // artifacts.go refuses to serve .html inline because rendering it
+                // in this origin would run an agent's script next to the loopback
+                // services and the admin token; an empty sandbox attribute keeps
+                // that guarantee while still showing the page — unique origin, no
+                // scripts, no forms, no access to this document.
+                //
+                // Subresources are the known limitation: the artifact endpoint
+                // addresses files by query string, so a relative <img src> in the
+                // page has nothing to resolve against. Self-contained HTML (inline
+                // CSS/SVG, data: images) — which is what an agent writes when asked
+                // for one file — renders fully.
+                <iframe
+                  title={art.name}
+                  srcDoc={doc}
+                  sandbox=""
+                  style={{ width: "100%", flex: grow, height: full ? "auto" : 440, border: 0, display: "block", background: format === "html" ? "#fff" : "var(--bg-deep)" }}
+                />
+              ) : (
+                <pre style={{ margin: 0, flex: grow, height: full ? "auto" : 440, overflow: "auto", padding: "18px 22px", font: "400 11.5px/1.6 'IBM Plex Mono'", color: "var(--tx2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {text ?? t("common.loading")}
+                </pre>
+              )}
+            </div>
           )}
           {art.kind === "file" && (
-            <div style={{ padding: "40px 22px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+            <div style={{ padding: "40px 22px", flex: grow, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span style={{ font: "500 12px 'IBM Plex Sans'", color: "var(--tx3)" }}>{t("daily.noPreview")}</span>
               <span style={{ font: "400 10.5px 'IBM Plex Mono'", color: "var(--tx-faint)", textAlign: "center", lineHeight: 1.6 }}>
                 {t("daily.noPreviewWhy")}

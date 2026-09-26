@@ -57,7 +57,7 @@ export interface Artifact {
   path: string; // relative to the run's output directory
   name: string;
   size: number;
-  kind: "video" | "image" | "audio" | "text" | "file";
+  kind: "video" | "image" | "audio" | "text" | "pdf" | "file";
   modTime: string;
 }
 

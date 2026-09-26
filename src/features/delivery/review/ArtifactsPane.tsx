@@ -22,6 +22,7 @@ const KIND_KEY: Record<Artifact["kind"], string> = {
   video: "review.kind.video",
   audio: "review.kind.audio",
   text: "review.kind.text",
+  pdf: "review.kind.pdf",
   file: "review.kind.file",
 };
 
@@ -30,6 +31,7 @@ const KIND_COLOR: Record<Artifact["kind"], string> = {
   video: "#b08ad9",
   audio: "#e0a83e",
   text: "#5b9fe8",
+  pdf: "#e0654e",
   file: "#8fa3b8",
 };
 

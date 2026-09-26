@@ -27,7 +27,8 @@ type Artifact struct {
 	Path string `json:"path"` // relative to the run's output directory
 	Name string `json:"name"`
 	Size int64  `json:"size"`
-	// Kind buckets the file for the gallery: video | image | audio | text | file.
+	// Kind buckets the file for the gallery:
+	// video | image | audio | text | pdf | file.
 	Kind string `json:"kind"`
 	// ModTime is RFC3339; artifacts are listed newest first.
 	ModTime string `json:"modTime"`
@@ -39,6 +40,11 @@ var artifactKinds = map[string]string{
 	".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image", ".svg": "image",
 	".mp3": "audio", ".wav": "audio", ".m4a": "audio", ".ogg": "audio", ".flac": "audio",
 	".md": "text", ".txt": "text", ".json": "text", ".csv": "text", ".html": "text", ".yaml": "text", ".yml": "text",
+	// A PDF is its own bucket rather than "text" (it is not) or "file" (the
+	// gallery would say it cannot be shown, which is untrue — it is on the
+	// inline allowlist below and the webview renders it). No serving policy
+	// changes with this line; only what the gallery knows it can draw.
+	".pdf": "pdf",
 }
 
 func artifactKind(name string) string {

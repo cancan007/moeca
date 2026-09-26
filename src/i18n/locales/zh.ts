@@ -493,7 +493,7 @@ export const zh: Dict = {
     manualEditNote: "手动修改会直接写入 worktree，并纳入 CI 重新执行的范围",
     saveToWorktree: "保存到 worktree",
 
-    kind: { image: "图片", video: "视频", audio: "音频", text: "文本", file: "文件" },
+    kind: { image: "图片", video: "视频", audio: "音频", text: "文本", pdf: "PDF", file: "文件" },
     artifactsFailed: "无法获取产物",
     noArtifacts: "该任务的 worktree 中尚无产物。",
     noArtifactsHint:
@@ -661,6 +661,9 @@ export const zh: Dict = {
     scrollV: "纵向滚动",
     preview: "预览",
     source: "源码",
+    previewSandboxed: "在隔离框架中显示——不执行脚本",
+    fullscreen: "全屏",
+    shrink: "缩小",
     hasReview: "含评审流程",
     needsReview: "待评审",
 
