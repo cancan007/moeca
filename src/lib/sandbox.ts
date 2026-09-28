@@ -16,6 +16,20 @@ export interface RunStage {
   effort?: string;
   /** Per-response output-token cap. Omit => the agent default (16000). */
   maxTokens?: number;
+  /** Context size at which the agent summarizes its own history, and how many
+   *  trailing turns survive that verbatim.
+   *
+   *  This is compaction INSIDE one stage's tool loop — a different thing from
+   *  Chat's history compaction, which reduces what is sent between turns. The
+   *  agent runtime has always done this; until these fields existed nothing set
+   *  the variables, so every run used the built-in 120k/6 and an agent declared
+   *  at 64k thought in the same budget as one declared at 200k.
+   *
+   *  Omit => the agent's defaults. A NEGATIVE maxContext disables compaction:
+   *  the agent reads 0 as "never", but 0 is also an absent field, so "off" needs
+   *  a value of its own. */
+  maxContext?: number;
+  keepRecent?: number;
   /** LLM dialect (anthropic|openai|openai-responses|gemini) and its gateway
    * route prefix. */
   provider: string;

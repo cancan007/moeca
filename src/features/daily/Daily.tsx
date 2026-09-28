@@ -271,7 +271,11 @@ export function Daily() {
   const staticTpls = useStore((s) => s.staticTpls);
   const providers = useStore((s) => s.providers);
   const tools = useStore((s) => s.tools);
-  const tplStores: TemplateStores = { solos, staticTpls, providers, tools };
+  // History compaction is part of compiling a stage: it decides the context
+  // budget each agent thinks in, so a schedule's run carries the operator's
+  // setting rather than the agent runtime's built-in default.
+  const history = useStore((s) => s.history);
+  const tplStores: TemplateStores = { solos, staticTpls, providers, tools, history };
   const templateChoices = templateOptions(tplStores);
   // the run whose template prompt is being optimized
   const [optimizeRun, setOptimizeRun] = useState<ScheduleRun | null>(null);

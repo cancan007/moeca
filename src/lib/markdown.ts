@@ -202,6 +202,37 @@ const PALETTE = {
   light: { bg: "#ffffff", tx: "#1b2331", tx2: "#36414f", dim: "#6c7682", bd: "#dce1e9", inset: "#f3f5f9", ac: "#4f9dff" },
 };
 
+/** Whether a file takes the SVG preview path. It is a name test rather than a
+ *  kind test because the gallery calls an .svg an "image" — see svgDocument for
+ *  why that is exactly the problem. */
+export function isSvgName(name: string): boolean {
+  return /\.svg$/i.test(name);
+}
+
+/**
+ * svgDocument wraps an SVG in a standalone document for the preview frame.
+ *
+ * An .svg is an image to the gallery and a DOWNLOAD to the host: it is XML with
+ * scripting, so it is deliberately left off the inline allowlist (artifacts.go
+ * lists it as an image kind and not an inline type, and says why). The
+ * consequence is that an `<img>` pointed at the artifact route can never load
+ * one — which is what every diagram an agent drew looked like.
+ *
+ * So it goes through the same `sandbox=""` frame markdown and HTML use: no
+ * scripts run, the frame has a unique origin, and nothing of the document
+ * reaches the window that holds the loopback services. This wrapper only sizes
+ * it; the file itself is embedded as written.
+ *
+ * `contain` fits the drawing to the frame for a preview; without it an SVG with
+ * no intrinsic size collapses to nothing.
+ */
+export function svgDocument(svg: string, theme: "dark" | "light"): string {
+  const c = PALETTE[theme === "light" ? "light" : "dark"];
+  return `<!doctype html><meta charset="utf-8">` +
+    `<style>html,body{margin:0;height:100%;background:${c.bg};overflow:hidden}` +
+    `svg{display:block;width:100%;height:100%;object-fit:contain}</style>${svg}`;
+}
+
 /** markdownDocument wraps rendered markdown in a standalone HTML document for
  *  the preview frame, themed to match the app.
  *

@@ -299,6 +299,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /daily/artifact", s.handleDailyArtifactDelete)
 	mux.HandleFunc("DELETE /daily/run", s.handleDailyRunDelete)
 	mux.HandleFunc("POST /daily/promote", s.handlePromote)
+	// Chat: standing conversations. A turn is an ordinary orchestrator run; the
+	// conversation owns one working directory, which is also its gallery.
+	mux.HandleFunc("GET /chat/conversations", s.handleChatConversations)
+	mux.HandleFunc("POST /chat/conversation", s.handleChatConversationSave)
+	mux.HandleFunc("DELETE /chat/conversation", s.handleChatConversationDelete)
+	mux.HandleFunc("GET /chat/turns", s.handleChatTurns)
+	mux.HandleFunc("POST /chat/turn", s.handleChatTurnCreate)
+	mux.HandleFunc("GET /chat/turn", s.handleChatTurn)
+	mux.HandleFunc("POST /chat/compact", s.handleChatCompact)
+	mux.HandleFunc("GET /chat/artifacts", s.handleChatArtifacts)
+	mux.HandleFunc("GET /chat/artifact", s.handleChatArtifact)
+	mux.HandleFunc("POST /chat/attachment", s.handleChatAttach)
 	mux.HandleFunc("GET /knowledge", s.handleKnowledge)
 	mux.HandleFunc("GET /knowledge/scope", s.handleKnowledgeScope)
 	mux.HandleFunc("POST /knowledge/org", s.handleKnowledgeOrg)

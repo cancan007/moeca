@@ -27,6 +27,35 @@ import (
 // dependency failed/was skipped is itself skipped. Stages hand work off through
 // the shared git worktree mounted into every sandbox.
 
+// applyStageCostEnv writes a stage's cost controls into its environment.
+//
+// These four are what the operator pays for — how hard the model thinks, how
+// much it may write per response, and how large its history grows before it is
+// summarized — so they are kept together and tested together rather than being
+// four lines in the middle of container setup. Every one of them is optional:
+// omitted means the agent's own default applies, which is why each is guarded
+// rather than always written.
+func applyStageCostEnv(env map[string]string, stage Stage) {
+	if stage.Effort != "" {
+		env["ORCHESTRA_EFFORT"] = stage.Effort
+	}
+	if stage.MaxTokens > 0 {
+		env["ORCHESTRA_MAX_TOKENS"] = strconv.Itoa(stage.MaxTokens)
+	}
+	// A NEGATIVE MaxContext is how a caller asks for in-stage compaction to be
+	// off: the agent runtime reads 0 as "never compact", but 0 is also what an
+	// absent field unmarshals to, so without the negative case "off" would be
+	// indistinguishable from "unset" and could only ever mean the default.
+	if stage.MaxContext > 0 {
+		env["ORCHESTRA_MAX_CONTEXT_TOKENS"] = strconv.Itoa(stage.MaxContext)
+	} else if stage.MaxContext < 0 {
+		env["ORCHESTRA_MAX_CONTEXT_TOKENS"] = "0"
+	}
+	if stage.KeepRecent > 0 {
+		env["ORCHESTRA_KEEP_RECENT"] = strconv.Itoa(stage.KeepRecent)
+	}
+}
+
 // Stage is one node of the run DAG (as submitted by the client).
 type Stage struct {
 	ID    string `json:"id"`
@@ -44,10 +73,22 @@ type Stage struct {
 	// Effort tunes reasoning depth / token spend (low|medium|high|xhigh|max) →
 	// ORCHESTRA_EFFORT; MaxTokens caps per-response output → ORCHESTRA_MAX_TOKENS.
 	// Both are cost controls; empty/0 => the agent's own defaults apply.
-	Effort    string            `json:"effort"`
-	MaxTokens int               `json:"maxTokens"`
-	DependsOn []string          `json:"dependsOn"`
-	Env       map[string]string `json:"env"`
+	Effort    string `json:"effort"`
+	MaxTokens int    `json:"maxTokens"`
+	// MaxContext is the context size at which the agent summarizes its own
+	// history → ORCHESTRA_MAX_CONTEXT_TOKENS; KeepRecent is how many trailing
+	// turns survive that summarization verbatim → ORCHESTRA_KEEP_RECENT.
+	//
+	// The agent runtime has done this since it had a tool loop, but nothing ever
+	// set either variable, so every run used the built-in 120k/6 regardless of
+	// what the agent was configured with — a Solo declared at 64k thought in the
+	// same budget as one declared at 200k. They are passed through here for the
+	// same reason Effort is: the cost of a run is the operator's decision, and a
+	// decision the UI cannot reach is not one.
+	MaxContext int               `json:"maxContext"`
+	KeepRecent int               `json:"keepRecent"`
+	DependsOn  []string          `json:"dependsOn"`
+	Env        map[string]string `json:"env"`
 	// Image names an entry of the controller's image ALLOWLIST (see images.go) —
 	// "base", "poly", "media", or a custom one added from Settings. It is a
 	// policy name, never an image reference: the controller looks up the ref,
@@ -573,13 +614,7 @@ func (s *Server) runStage(run *Run, stage Stage, worktree string, strict bool, o
 	if stage.Task != "" {
 		env["ORCHESTRA_TASK"] = stage.Task
 	}
-	// Cost controls (optional per stage; the agent falls back to its defaults).
-	if stage.Effort != "" {
-		env["ORCHESTRA_EFFORT"] = stage.Effort
-	}
-	if stage.MaxTokens > 0 {
-		env["ORCHESTRA_MAX_TOKENS"] = strconv.Itoa(stage.MaxTokens)
-	}
+	applyStageCostEnv(env, stage)
 	// Point the agent at the selected gateway provider (dialect + route). The
 	// base URL is derived from the strict gateway origin + the provider prefix,
 	// so the sandbox reaches only the gateway and the agent speaks the right

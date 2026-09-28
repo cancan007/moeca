@@ -90,6 +90,7 @@ export function AgentRunner({ task, templateRef }: { task: DeliveryTask; templat
   const providers = useStore((s) => s.providers);
   const tools = useStore((s) => s.tools);
   const dynamicPrompt = useStore((s) => s.dynamicPrompt);
+  const history = useStore((s) => s.history);
   const addNotif = useStore((s) => s.addNotif);
 
   const [runId, setRunId] = useState<string | null>(null);
@@ -105,7 +106,7 @@ export function AgentRunner({ task, templateRef }: { task: DeliveryTask; templat
 
   const stopPolling = () => { if (timer.current) window.clearInterval(timer.current); timer.current = null; };
 
-  const tplStores: TemplateStores = { solos, staticTpls, providers, tools };
+  const tplStores: TemplateStores = { solos, staticTpls, providers, tools, history };
   const compiled = templateRef === DYNAMIC_REF ? null : compileRef(templateRef, tplStores, task.title);
   const label = templateRef === DYNAMIC_REF ? t("review.dynamicAuto") : compiled?.label ?? t("review.unassigned");
 

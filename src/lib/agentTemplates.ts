@@ -12,12 +12,17 @@ import type { RunStage } from "@/lib/sandbox";
 import type { SoloAgent, StaticTemplate } from "@/lib/templates";
 import type { ProviderInput } from "@/lib/providers";
 import type { ToolDef } from "@/lib/tools";
+import type { HistorySettings } from "@/lib/chatContext";
 
 export interface TemplateStores {
   solos: SoloAgent[];
   staticTpls: StaticTemplate[];
   providers: ProviderInput[];
   tools: ToolDef[];
+  /** In-stage history compaction (Settings › 履歴圧縮). Optional: a caller that
+   *  omits it compiles stages with no compaction fields, leaving the agent on
+   *  its built-in defaults. */
+  history?: HistorySettings;
 }
 
 export interface TemplateOption {
@@ -75,18 +80,34 @@ export function compileRef(ref: string, st: TemplateStores, task: string): { lab
   if (kind === "solo") {
     const solo = st.solos.find((s) => s.id === id);
     if (!solo) return null;
-    return { label: `Solo — ${solo.name}`, stages: compileSolo(solo, st.providers, st.tools, task) };
+    return { label: `Solo — ${solo.name}`, stages: compileSolo(solo, st.providers, st.tools, task, st.history) };
   }
   if (kind === "static") {
     const t = st.staticTpls.find((x) => x.id === id);
     if (!t) return null;
     const stages =
       t.pattern === "graph"
-        ? compileGraph(t, st.solos, st.providers, st.tools, st.staticTpls, task)
-        : compileSupervisor(t, st.solos, st.providers, st.tools, st.staticTpls, task);
+        ? compileGraph(t, st.solos, st.providers, st.tools, st.staticTpls, task, st.history)
+        : compileSupervisor(t, st.solos, st.providers, st.tools, st.staticTpls, task, st.history);
     return { label: staticLabel(t), stages };
   }
   return null;
+}
+
+/** The stage whose closing message is the run's answer: a sink of the DAG —
+ *  nothing depends on it — and the last one of those in compile order.
+ *
+ *  Chat needs this because a reply is one stage's text, not the run's. The host
+ *  can fall back to "the most recently written handoff manifest", which is right
+ *  in a serial run, but naming the stage is the difference between knowing and
+ *  inferring. A run with a genuine fan-out at the end has several sinks and the
+ *  last one wins — the alternative is concatenating answers that were written
+ *  without knowing about each other. */
+export function sinkStageId(stages: RunStage[]): string {
+  if (stages.length === 0) return "";
+  const depended = new Set(stages.flatMap((s) => s.dependsOn));
+  const sinks = stages.filter((s) => !depended.has(s.id));
+  return (sinks.length > 0 ? sinks[sinks.length - 1] : stages[stages.length - 1]).id;
 }
 
 /** The runSpec object stored on a schedule (taskId/worktreePath are injected by

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { templateOptions, normalizeRef, buildRunSpec, DYNAMIC_REF, type TemplateStores } from "./agentTemplates";
+import { templateOptions, normalizeRef, buildRunSpec, sinkStageId, DYNAMIC_REF, type TemplateStores } from "./agentTemplates";
 import type { SoloAgent, StaticTemplate } from "./templates";
+import type { RunStage } from "./sandbox";
 
 const solo = (id: string, name: string): SoloAgent =>
   ({ id, name, role: "実装", providerId: "anthropic", model: "claude-sonnet-5", ctx: "", strat: "", dot: "", arch: "" }) as SoloAgent;
@@ -83,5 +84,29 @@ describe("buildRunSpec is a spec the orchestrator accepts", () => {
   it("marks a scheduled run unattended, and a Delivery run not", () => {
     expect(buildRunSpec([], { unattended: true })).toMatchObject({ unattended: true });
     expect(buildRunSpec([])).not.toHaveProperty("unattended");
+  });
+});
+
+// A chat reply is one stage's closing message, so the stage has to be named.
+describe("sinkStageId", () => {
+  const stage = (id: string, dependsOn: string[] = []) =>
+    ({ id, name: id, role: "", model: "", provider: "", providerPrefix: "", system: "", task: "", dependsOn }) as RunStage;
+
+  it("is the stage nothing depends on", () => {
+    expect(sinkStageId([stage("plan"), stage("build", ["plan"]), stage("review", ["build"])])).toBe("review");
+  });
+
+  it("is the only stage of a one-stage template", () => {
+    expect(sinkStageId([stage("builder")])).toBe("builder");
+  });
+
+  // Several sinks means several answers written without knowing about each
+  // other; the last one stands rather than concatenating them.
+  it("takes the last sink when a run fans out at the end", () => {
+    expect(sinkStageId([stage("plan"), stage("a", ["plan"]), stage("b", ["plan"])])).toBe("b");
+  });
+
+  it("has nothing to name for an empty run", () => {
+    expect(sinkStageId([])).toBe("");
   });
 });

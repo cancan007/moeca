@@ -407,6 +407,14 @@ func (s *Server) startRun(taskID, worktree string, spec json.RawMessage, groups 
 	} else {
 		delete(m, "groups")
 	}
+	return s.submitRun(m)
+}
+
+// submitRun POSTs an assembled run spec to the sandbox controller's orchestrator
+// and returns the run id. Split out from startRun because Chat launches runs too
+// and differs only in what it puts in the map — the submission itself, and the
+// error it reports when the controller refuses, should not have two copies.
+func (s *Server) submitRun(m map[string]any) (string, error) {
 	body, err := json.Marshal(m)
 	if err != nil {
 		return "", err

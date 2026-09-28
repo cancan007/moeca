@@ -7,6 +7,7 @@ import type { RunStage } from "@/lib/sandbox";
 import type { ProviderInput } from "@/lib/providers";
 import { type ToolDef, type CompiledTool, compileTool, RAG_FILE_TOOL, RAG_SEARCH_TOOL, RAG_SOURCE_TOOL } from "@/lib/tools";
 import { type GraphTemplate, type SupervisorTemplate, type StaticTemplate, type SoloAgent, soloSystem } from "@/lib/templates";
+import { stageCompaction, type HistorySettings } from "@/lib/chatContext";
 // The orchestration prompts this file appends are read from the active locale.
 // Still pure with respect to its arguments — the language is ambient config,
 // the same way the model catalog is.
@@ -19,6 +20,10 @@ export interface CompileCtx {
   tools: ToolDef[];
   templates: StaticTemplate[]; // for template-nodes (recursive composition)
   task: string;
+  /** In-stage history compaction, from Settings › 履歴圧縮. Absent compiles no
+   *  compaction fields at all, which leaves the agent on its built-in defaults —
+   *  the behaviour every run had before these could be set. */
+  history?: HistorySettings;
 }
 
 /** Compile a single Solo into a one-stage run (used by scheduled Solo runs). */
@@ -27,10 +32,11 @@ export function compileSolo(
   providers: ProviderInput[],
   tools: ToolDef[],
   task: string,
+  history?: HistorySettings,
 ): RunStage[] {
   if (!solo) return [];
   const provider = providers.find((p) => p.name === solo.providerId);
-  const stage = stageFromSolo({ solos: [], providers, tools, templates: [], task }, solo.id, solo, provider, []);
+  const stage = stageFromSolo({ solos: [], providers, tools, templates: [], task, history }, solo.id, solo, provider, []);
   return stage ? [stage] : [];
 }
 
@@ -68,6 +74,11 @@ function stageFromSolo(
     model: overrides?.model ?? solo.model,
     effort: overrides?.effort ?? solo.effort,
     maxTokens: overrides?.maxTokens ?? solo.maxTokens,
+    // How much history this stage's own tool loop may accumulate before it
+    // summarizes itself. Derived from the agent's declared context budget so a
+    // Solo written down as a 64k thinker is one, rather than silently running in
+    // the runtime's built-in 120k like every stage did before this was wired.
+    ...(ctx.history ? stageCompaction(solo, ctx.history) : {}),
     provider: provider.dialect || "anthropic",
     providerPrefix: provider.prefix,
     system: overrides?.system ?? soloSystem(solo),
@@ -286,8 +297,9 @@ export function compileGraph(
   tools: ToolDef[],
   templates: StaticTemplate[],
   task: string,
+  history?: HistorySettings,
 ): RunStage[] {
-  return expandGraph(graph, { solos, providers, tools, templates, task }, "", [], new Set()).stages;
+  return expandGraph(graph, { solos, providers, tools, templates, task, history }, "", [], new Set()).stages;
 }
 
 /** Compile a Supervisor template (plan→workers→integrate) to a DAG. */
@@ -298,8 +310,9 @@ export function compileSupervisor(
   tools: ToolDef[],
   templates: StaticTemplate[],
   task: string,
+  history?: HistorySettings,
 ): RunStage[] {
-  return expandSupervisor(sup, { solos, providers, tools, templates, task }, "", [], new Set()).stages;
+  return expandSupervisor(sup, { solos, providers, tools, templates, task, history }, "", [], new Set()).stages;
 }
 
 /**

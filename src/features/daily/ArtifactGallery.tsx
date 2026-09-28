@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { daily as dailyApi, type Artifact, type ScheduleRun } from "@/lib/daily";
-import { markdownDocument } from "@/lib/markdown";
+import { isSvgName, markdownDocument, svgDocument } from "@/lib/markdown";
 import { useStore } from "@/store/useStore";
 
 // The Daily gallery: what the scheduled runs actually produced, where you review
@@ -532,9 +532,17 @@ function ArtifactCard({ item, onOpen, picked = false, onToggle }: {
   // glance. .txt/.json/.csv keep their extension label — monospace data has no
   // recognisable top, so a thumbnail of it is just grey.
   const format = previewFormat(art.name);
-  const wantsDocThumb = art.kind === "text" && format !== "plain";
+  // An .svg is an image the host serves as a download (see svgDocument), so its
+  // card cannot be an <img> either — it takes the same framed route the document
+  // thumbnails take, and shows the drawing rather than a broken picture icon.
+  const isSvg = art.kind === "image" && isSvgName(art.name);
+  const wantsDocThumb = (art.kind === "text" && format !== "plain") || isSvg;
   const head = useTextHead(src, wantsDocThumb);
-  const thumbDoc = head == null ? null : format === "markdown" ? markdownDocument(head, theme, true) : head;
+  const thumbDoc = head == null
+    ? null
+    : isSvg
+      ? svgDocument(head, theme)
+      : format === "markdown" ? markdownDocument(head, theme, true) : head;
 
   return (
     <div
@@ -562,7 +570,7 @@ function ArtifactCard({ item, onOpen, picked = false, onToggle }: {
       </div>
       <div style={{ height: 96, position: "relative", background: art.kind === "video" ? VIDEO_GRAD : art.kind === "audio" ? AUDIO_GRAD : art.kind === "image" ? IMAGE_GRAD : "var(--bg-thumb)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <span style={cornerDot(color)} />
-        {art.kind === "image" ? (
+        {art.kind === "image" && !isSvg ? (
           // A real thumbnail: the same URL the preview uses, so what the card
           // shows is what the file is.
           <img src={dailyApi.artifactUrl(run.id, art.path)} alt={art.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -600,13 +608,16 @@ function ArtifactCard({ item, onOpen, picked = false, onToggle }: {
           // Same sandboxed frame as the detail preview, cropped to the card: no
           // scripts, unique origin, and no clicks of its own so the card still
           // opens on a click anywhere over it.
-          <div style={docThumb(format === "html" ? "#fff" : "var(--bg-deep)")}>
+          <div style={docThumb(format === "html" && !isSvg ? "#fff" : "var(--bg-deep)")}>
             <iframe
               title={art.name}
               srcDoc={thumbDoc}
               sandbox=""
               scrolling="no"
-              style={{ width: "100%", height: 300, border: 0, display: "block" }}
+              // A document thumbnail is the TOP of a tall page, cropped — that is
+              // what identifies a report. A drawing is not read from the top, so
+              // an .svg gets the card's own height and fits inside it whole.
+              style={{ width: "100%", height: isSvg ? "100%" : 300, border: 0, display: "block" }}
             />
           </div>
         ) : (
@@ -660,14 +671,18 @@ function ArtifactModal({ item, onClose, onDeleted }: { item: Item; onClose: () =
   }, [full, onClose]);
 
   // What the preview frame is given. Markdown becomes a themed document;
-  // .html IS the document and goes in as written.
-  const doc = useMemo(
-    () => (text == null ? null : format === "markdown" ? markdownDocument(text, theme) : text),
-    [text, format, theme],
-  );
+  // .html IS the document and goes in as written; an .svg is sized to the frame.
+  const isSvg = art.kind === "image" && isSvgName(art.name);
+  const doc = useMemo(() => {
+    if (text == null) return null;
+    if (isSvg) return svgDocument(text, theme);
+    return format === "markdown" ? markdownDocument(text, theme) : text;
+  }, [text, format, theme, isSvg]);
 
   useEffect(() => {
-    if (art.kind !== "text") return;
+    // An .svg is fetched for the same reason text is: the route hands it back as
+    // an attachment, so it has to be read as data and rendered here.
+    if (art.kind !== "text" && !isSvgName(art.name)) return;
     let cancelled = false;
     // Text is fetched rather than embedded: the host agent serves it as an
     // attachment (only media may render inline), so it has to be read as data
@@ -677,7 +692,7 @@ function ArtifactModal({ item, onClose, onDeleted }: { item: Item; onClose: () =
       .then((t) => { if (!cancelled) setText(t); })
       .catch(() => { if (!cancelled) setText(t("daily.readFailed")); });
     return () => { cancelled = true; };
-  }, [src, art.kind]);
+  }, [src, art.kind, art.name]);
 
   return (
     <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(6,8,11,.62)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: full ? 0 : 32 }}>
@@ -737,7 +752,16 @@ function ArtifactModal({ item, onClose, onDeleted }: { item: Item; onClose: () =
           )}
           {art.kind === "image" && (
             <div style={{ padding: 18, flex: grow, minHeight: 0, maxHeight: full ? "none" : 500, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-deep)" }}>
-              <img src={src} alt={art.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              {isSvg ? (
+                <iframe
+                  title={art.name}
+                  srcDoc={doc ?? ""}
+                  sandbox=""
+                  style={{ width: "100%", height: full ? "100%" : 440, border: 0, display: "block", background: "var(--bg-deep)" }}
+                />
+              ) : (
+                <img src={src} alt={art.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              )}
             </div>
           )}
           {art.kind === "pdf" && (

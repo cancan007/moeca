@@ -12,6 +12,7 @@ import {
 import { providersApi, type ProviderInput, type ProviderView } from "@/lib/providers";
 import type { ToolDef } from "@/lib/tools";
 import { mediaToolPresets, migrateMediaGrants } from "@/lib/mediaTools";
+import { defaultHistorySettings, type HistorySettings } from "@/lib/chatContext";
 import i18n, { currentLang, type Lang } from "@/i18n";
 
 export type Theme = "dark" | "light";
@@ -86,6 +87,11 @@ interface State {
   tasks: DeliveryTask[];
   moveTask: (id: string, status: DeliveryStatus) => void;
 
+  /** The conversation Chat has open. Kept here, like reviewId, so switching to
+   *  another screen and back does not close it. */
+  chatId: string | null;
+  setChatId: (id: string | null) => void;
+
   reviewId: string | null;
   reviewTab: ReviewTab;
   openReview: (id: string) => void;
@@ -116,6 +122,27 @@ interface State {
   upsertTool: (t: ToolDef) => void;
   deleteTool: (id: string) => void;
 
+  // History compaction (Settings › 履歴圧縮), persisted with the templates.
+  //
+  // It governs BOTH layers: Chat reduces its transcript between turns with it,
+  // and every compiled stage carries a context budget derived from it. The panel
+  // held these three values in component state before, which is why the toggle
+  // controlled nothing at all.
+  history: HistorySettings;
+  setHistory: (h: Partial<HistorySettings>) => void;
+  /** The Solo whose model and system prompt are used to write chat summaries.
+   *  It is configuration, not a stage: the summarizer is one tool-less model
+   *  call the host makes through the gateway, not a container. Unset falls back
+   *  to a built-in prompt and refuses to guess a model. */
+  compactorSoloId: string;
+  setCompactorSoloId: (id: string) => void;
+  /** What the last compaction actually saved, as the host measured it.
+   *  Transient — it describes an event, not a setting — and it exists so the
+   *  Settings panel can report a real number instead of the −38% that used to be
+   *  hard-coded into the badge. */
+  lastCompaction: { replaced: number; summary: number } | null;
+  setLastCompaction: (v: { replaced: number; summary: number }) => void;
+
   // Providers (LLM connections). Non-secret config persists to localStorage;
   // secrets live in the OS keychain (host side) — hasSecret comes from the gateway.
   providers: ProviderInput[];
@@ -138,6 +165,8 @@ interface TemplatesBlob {
   tools: ToolDef[];
   dynamicPrompt: string;
   globalPrompt: string;
+  history: HistorySettings;
+  compactorSoloId: string;
 }
 
 // Ensure a solo has a provider binding (migrates pre-provider blobs).
@@ -157,6 +186,11 @@ function templateDefaults(lng?: string): TemplatesBlob {
     tools: mediaToolPresets(),
     dynamicPrompt: defaultDynamicPrompt(lng),
     globalPrompt: defaultGlobalPrompt(lng),
+    history: defaultHistorySettings,
+    // No default compactor: choosing which model writes the summaries — and
+    // therefore what it costs — is the operator's call, and picking one of their
+    // agents on their behalf would spend money they did not agree to.
+    compactorSoloId: "",
   };
 }
 
@@ -192,6 +226,10 @@ function loadTemplates(): TemplatesBlob {
       tools,
       dynamicPrompt: parsed.dynamicPrompt ?? defaults.dynamicPrompt,
       globalPrompt: parsed.globalPrompt ?? defaults.globalPrompt,
+      // Field-by-field so a store written before a knob existed picks up its
+      // default instead of losing the whole object to one missing key.
+      history: { ...defaults.history, ...(parsed.history ?? {}) },
+      compactorSoloId: parsed.compactorSoloId ?? defaults.compactorSoloId,
     };
     // One-time move of the old media grants onto tools. It writes only when
     // there was something to move, so this cannot churn stored state on every
@@ -248,7 +286,7 @@ function persistTemplates(s: TemplatesBlob) {
   try {
     localStorage.setItem(
       TPL_KEY,
-      JSON.stringify({ solos: s.solos, staticTpls: s.staticTpls, providers: s.providers, tools: s.tools, dynamicPrompt: s.dynamicPrompt, globalPrompt: s.globalPrompt }),
+      JSON.stringify({ solos: s.solos, staticTpls: s.staticTpls, providers: s.providers, tools: s.tools, dynamicPrompt: s.dynamicPrompt, globalPrompt: s.globalPrompt, history: s.history, compactorSoloId: s.compactorSoloId }),
     );
   } catch {
     /* ignore (e.g. storage disabled) */
@@ -307,7 +345,14 @@ export const useStore = create<State>((set) => ({
       if (l === s.language) return {};
       void i18n.changeLanguage(l); // also writes the localStorage cache
       const next = reseedTemplates(
-        { solos: s.solos, staticTpls: s.staticTpls, providers: s.providers, tools: s.tools, dynamicPrompt: s.dynamicPrompt, globalPrompt: s.globalPrompt },
+        {
+          solos: s.solos, staticTpls: s.staticTpls, providers: s.providers, tools: s.tools,
+          dynamicPrompt: s.dynamicPrompt, globalPrompt: s.globalPrompt,
+          // Carried through untouched: a compaction threshold is a number, not a
+          // translated string, and the whole blob is written back below — a key
+          // missing here would be persisted as absent and reset on the next load.
+          history: s.history, compactorSoloId: s.compactorSoloId,
+        },
         s.language,
         l,
       );
@@ -330,6 +375,9 @@ export const useStore = create<State>((set) => ({
 
   tasks: [],
   moveTask: (id, status) => set((s) => ({ tasks: s.tasks.map((t) => (t.id === id ? { ...t, status } : t)) })),
+
+  chatId: null,
+  setChatId: (id) => set({ chatId: id }),
 
   reviewId: null,
   reviewTab: "task",
@@ -443,6 +491,19 @@ export const useStore = create<State>((set) => ({
       persistTemplates({ ...st, globalPrompt: p });
       return { globalPrompt: p };
     }),
+  setHistory: (h) =>
+    set((st) => {
+      const history = { ...st.history, ...h };
+      persistTemplates({ ...st, history });
+      return { history };
+    }),
+  setCompactorSoloId: (id) =>
+    set((st) => {
+      persistTemplates({ ...st, compactorSoloId: id });
+      return { compactorSoloId: id };
+    }),
+  lastCompaction: null,
+  setLastCompaction: (v) => set({ lastCompaction: v }),
   upsertTool: (t) =>
     set((st) => {
       const tools = st.tools.some((x) => x.id === t.id)

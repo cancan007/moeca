@@ -28,8 +28,9 @@ function relativeTime(ts: number, t: TFn): string {
 // Screen names stay untranslated on purpose: they are the product's own
 // vocabulary (and the route paths), not descriptions of it.
 const tabs = [
-  { to: "/delivery", key: "nav.delivery" },
+  { to: "/chat", key: "nav.chat" },
   { to: "/daily", key: "nav.daily" },
+  { to: "/delivery", key: "nav.delivery" },
   { to: "/terminal", key: "nav.terminal" },
   { to: "/knowledge", key: "nav.knowledge" },
   { to: "/audit", key: "nav.audit" },

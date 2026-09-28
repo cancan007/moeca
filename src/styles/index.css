@@ -74,6 +74,25 @@
 @keyframes ocBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @keyframes ocSpin { to { transform: rotate(360deg); } }
 
+/* Entrances used by Chat (and defined in the Orchestra design's own stylesheet):
+   a screen appearing, a card popping, a message rising into place. Held to a few
+   hundred milliseconds and all suppressed by the reduced-motion rule below. */
+@keyframes ocFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ocScreenIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes ocPop { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes ocRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes ocPopUp {
+  from { opacity: 0; transform: translate(-50%, calc(-100% - 2px)) scale(.97); }
+  to { opacity: 1; transform: translate(-50%, calc(-100% - 8px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app-root, #app-root * {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
+
 .oc-active-dot { animation: ocPulse 1.6s ease-out infinite; }
 .oc-caret { animation: ocBlink 1.1s step-end infinite; }
 .oc-spin { animation: ocSpin 0.9s linear infinite; }

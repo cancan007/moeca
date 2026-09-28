@@ -105,9 +105,10 @@ below).
 
 ### Files: what is writable and what is not
 
-Agents work in a git worktree bind-mounted from the host. **That directory is
-writable, and an agent can change anything in it** — that is the point of it.
-Everything outside it is not mounted and cannot be reached.
+Agents work in one directory bind-mounted from the host — a git worktree for a
+Delivery task, a plain directory for a Daily run or a Chat conversation.
+**That directory is writable, and an agent can change anything in it** — that is
+the point of it. Everything outside it is not mounted and cannot be reached.
 
 Knowledge folders are mounted **read-only**, and only into the indexer. A test
 asserts the `:ro` suffix on every knowledge mount, so this cannot be lost by
@@ -206,6 +207,45 @@ provider**, under whatever account you configured.
 
 If your knowledge base contains something that must not leave your machine, no
 setting in moeca changes that outcome. Do not index it.
+
+A chat sends more than the message you typed: every turn carries the
+conversation history the screen is showing you. **History compaction sends it
+again** — reading the transcript back is how a briefing gets written — and past a
+point it does so on send, without you pressing anything. The threshold in
+*Settings › History compression* is where it starts offering; fifteen points
+above that it stops asking, because by then the alternative to compacting is a
+turn that will not fit. Two of the three strategies there
+make no model call at all: *keep everything* never compacts, and *last N only*
+drops old turns without summarizing them. Pick one of those if a second pass over
+the transcript is not something you want to send. The summarizer holds no key
+and goes through the gateway like everything else, so it is logged and auditable
+— though it is made by the host agent under its own gateway session rather than
+by a sandbox under a run's, so it carries no run or stage attribution. It is the
+one model call in the product that you did not ask for directly, and that is
+worth knowing.
+
+### A conversation is kept, and its directory outlives the turn
+
+Chat stores the whole transcript — every message, and the briefings compaction
+writes — in the same local SQLite database as your schedules and tickets, in
+plain text. Compaction never deletes a turn: it marks one as no longer sent, so
+what a briefing replaced stays readable and stays on disk. Deleting the
+conversation is what removes it, and that removes its working directory too.
+
+Nothing guards that database beyond your file permissions, and nothing guards the
+host agent that serves it: it listens on `127.0.0.1` with **no authentication**,
+because the boundary is your OS account (see *Who this is for*). Anything running
+as you can read your conversations. That was already true of your tasks, your
+diffs and your knowledge graph — it is restated here because a conversation is
+usually the most candid thing in the product.
+
+A Daily run gets a fresh directory each time. A conversation does not: every turn
+shares one, which is what lets an agent revise what it wrote last turn and read a
+file you attached earlier. The cost of that is that **a file written by one turn
+is sitting in the next turn's `/work`**. An instruction planted in it — by a page
+an agent fetched, by a document it summarized — keeps being read until the file
+is removed. A Delivery worktree behaves the same way; it is new only if your
+mental model came from Daily.
 
 ### The model decides what to do
 
