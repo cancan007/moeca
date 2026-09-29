@@ -183,17 +183,72 @@ func TestResponsesEmptyToolArgumentsBecomeAnObject(t *testing.T) {
 	}
 }
 
-// The web_search grant carries a per-run max_uses cap that this API has no
-// field for, so the tool is dropped rather than forwarded uncapped.
-func TestResponsesDropsServerTools(t *testing.T) {
+// The web_search grant is translated: this API has the same built-in tool, and a
+// built-in is named by its type alone — no name, description or parameters.
+func TestResponsesTranslatesWebSearch(t *testing.T) {
 	m := orEncoded(t, Request{
 		Model:     "gpt-6-astra",
 		MaxTokens: 100,
 		Messages:  []Message{{Role: "user", Content: []Block{TextBlock("hi")}}},
 		Tools:     []Tool{{Name: "web_search", Type: WebSearchTool, MaxUses: 5}},
 	})
-	if _, present := m["tools"]; present {
-		t.Errorf("server tool was advertised: %#v", m["tools"])
+	tools, _ := m["tools"].([]any)
+	if len(tools) != 1 {
+		t.Fatalf("tools = %#v, want the search grant", m["tools"])
+	}
+	tool, _ := tools[0].(map[string]any)
+	if tool["type"] != "web_search" {
+		t.Errorf("type = %#v, want web_search", tool["type"])
+	}
+	if _, named := tool["name"]; named {
+		t.Errorf("built-in tool carries a name: %#v", tool)
+	}
+	// max_uses has no field in this API. It is deliberately absent rather than
+	// approximated, and the agent enforces the cap by counting what comes back —
+	// see the loop. A test that accepted some invented field here would be
+	// asserting a request the API rejects.
+	if _, capped := tool["max_uses"]; capped {
+		t.Errorf("invented a max_uses field: %#v", tool)
+	}
+}
+
+// Domain restriction does cross, and nests under one object rather than the two
+// mutually exclusive fields the Anthropic dialect takes.
+func TestResponsesWebSearchDomainFilters(t *testing.T) {
+	m := orEncoded(t, Request{
+		Model:     "gpt-6-astra",
+		MaxTokens: 100,
+		Messages:  []Message{{Role: "user", Content: []Block{TextBlock("hi")}}},
+		Tools:     []Tool{{Name: "web_search", Type: WebSearchTool, MaxUses: 5, AllowedDomains: []string{"go.dev"}}},
+	})
+	tools, _ := m["tools"].([]any)
+	tool, _ := tools[0].(map[string]any)
+	filters, ok := tool["filters"].(map[string]any)
+	if !ok {
+		t.Fatalf("no filters on the grant: %#v", tool)
+	}
+	allowed, _ := filters["allowed_domains"].([]any)
+	if len(allowed) != 1 || allowed[0] != "go.dev" {
+		t.Errorf("allowed_domains = %#v, want [go.dev]", filters["allowed_domains"])
+	}
+	if _, blocked := filters["blocked_domains"]; blocked {
+		t.Errorf("sent both domain lists: %#v", filters)
+	}
+}
+
+// A grant with no domain restriction carries no filters object at all, rather
+// than an empty one.
+func TestResponsesWebSearchWithoutFilters(t *testing.T) {
+	m := orEncoded(t, Request{
+		Model:     "gpt-6-astra",
+		MaxTokens: 100,
+		Messages:  []Message{{Role: "user", Content: []Block{TextBlock("hi")}}},
+		Tools:     []Tool{{Name: "web_search", Type: WebSearchTool, MaxUses: 5}},
+	})
+	tools, _ := m["tools"].([]any)
+	tool, _ := tools[0].(map[string]any)
+	if _, present := tool["filters"]; present {
+		t.Errorf("empty filters were sent: %#v", tool)
 	}
 }
 

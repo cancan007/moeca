@@ -32,6 +32,13 @@ type logLine struct {
 	Stage string   `json:"stage,omitempty"`
 	Files []string `json:"files,omitempty"`
 
+	// provider-side search accounting (Type == "web_search" /
+	// "web_search_exhausted"): how many of the grant have been spent. Tool
+	// carries the action (search / open_page / find_in_page) and Message the
+	// query or URL, so the run log says what was looked up as well as how often.
+	Count int `json:"count,omitempty"`
+	Limit int `json:"limit,omitempty"`
+
 	// compaction accounting (Type == "compaction")
 	Before int `json:"before,omitempty"` // message count before summarizing
 	After  int `json:"after,omitempty"`  // message count after summarizing

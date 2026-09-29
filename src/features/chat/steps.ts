@@ -24,6 +24,12 @@ export type Step =
   | { kind: "tool"; name: string; error: boolean }
   /** The agent summarized its own history mid-run (the in-stage layer). */
   | { kind: "compaction"; before: number; after: number; tokens: number }
+  /** One provider-side web search. The agent does not run this tool — the model
+   *  provider does — so counting what came back is the only account of it there
+   *  is, and each one is billed separately from the tokens. */
+  | { kind: "search"; action: string; query: string; used: number; limit: number }
+  /** The search grant was spent and the tool withdrawn for the rest of the run. */
+  | { kind: "searchLimit"; used: number; limit: number }
   /** What the stage published for whatever came after it. */
   | { kind: "handoff"; files: string[] }
   | { kind: "error"; message: string };
@@ -43,6 +49,8 @@ interface RawLine {
   before?: number;
   after?: number;
   tokens?: number;
+  count?: number;
+  limit?: number;
   usage?: { inputTokens?: number; outputTokens?: number; input_tokens?: number; output_tokens?: number };
 }
 
@@ -89,6 +97,18 @@ export function parseStageLog(log: string): Step[] {
           out.push({ kind: "error", message: l.message });
         }
         break;
+      case "web_search":
+        out.push({
+          kind: "search",
+          action: l.tool || "search",
+          query: l.message ?? "",
+          used: l.count ?? 0,
+          limit: l.limit ?? 0,
+        });
+        break;
+      case "web_search_exhausted":
+        out.push({ kind: "searchLimit", used: l.count ?? 0, limit: l.limit ?? 0 });
+        break;
       case "handoff":
         if ((l.files ?? []).length > 0) out.push({ kind: "handoff", files: l.files ?? [] });
         break;
@@ -132,10 +152,14 @@ export function runSteps(status: RunStatus | null, logs: Record<string, string>)
 
 /** Totals for the collapsed header: how many tool calls were made and what the
  *  turn cost. Tokens are summed over model turns, which is where the money is. */
-export function stepTotals(steps: Step[]): { tools: number; tokens: number; errors: number } {
+export function stepTotals(steps: Step[]): { tools: number; tokens: number; errors: number; searches: number } {
   let tools = 0;
   let tokens = 0;
   let errors = 0;
+  // Counted apart from tools because it is billed apart from tokens: a web
+  // search is charged per use, and the whole point of surfacing it is that no
+  // other number in this view reflects it.
+  let searches = 0;
   for (const s of steps) {
     if (s.kind === "tool") {
       tools++;
@@ -143,8 +167,9 @@ export function stepTotals(steps: Step[]): { tools: number; tokens: number; erro
     }
     if (s.kind === "turn") tokens += s.tokens;
     if (s.kind === "error") errors++;
+    if (s.kind === "search") searches++;
   }
-  return { tools, tokens, errors };
+  return { tools, tokens, errors, searches };
 }
 
 /** Compact token count for the log header ("1.4K"). */

@@ -329,6 +329,31 @@ func (s *SQLiteStore) MarkDropped(ids []int64) error {
 	return err
 }
 
+// RunningTurns returns every agent turn still marked as running, across all
+// conversations.
+//
+// A turn is finished by a goroutine that polls the run. That goroutine dies with
+// the process, so an app that is quit — or replaced — while a turn is in flight
+// leaves the row saying "running" with nobody left to change it, and the
+// conversation reads as permanently busy. This is what the reconciler reads on
+// startup to settle them.
+func (s *SQLiteStore) RunningTurns() ([]ChatTurn, error) {
+	rows, err := s.db.Query(`SELECT ` + turnColumns + ` FROM chat_turns WHERE kind = 'agent' AND status = 'running' ` + turnOrder)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ChatTurn{}
+	for rows.Next() {
+		t, err := scanTurn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // ChatDirs returns every output directory recorded against a conversation, so a
 // delete can remove the files as well as the rows.
 func (s *SQLiteStore) ChatDirs(convID string) ([]string, error) {

@@ -77,6 +77,22 @@ function StepRow({ step }: { step: Step }) {
       text = t("chat.log.compacted", { before: step.before, after: step.after });
       dur = step.tokens ? `${fmtTokens(step.tokens)} tok` : "";
       break;
+    case "search":
+      tag = "search";
+      // The action matters as much as the count: one OpenAI grant covers
+      // searching, opening a page and reading it, and each is billed.
+      text = step.query
+        ? t(`chat.log.search.${step.action}`, { defaultValue: step.action, q: step.query })
+        : t(`chat.log.search.${step.action}`, { defaultValue: step.action, q: "" });
+      dur = step.limit > 0 ? `${step.used}/${step.limit}` : String(step.used);
+      tone = "#5b9fe8";
+      break;
+    case "searchLimit":
+      tag = "search";
+      text = t("chat.log.searchLimit", { used: step.used, limit: step.limit });
+      dur = `${step.used}/${step.limit}`;
+      tone = "#e0a83e";
+      break;
     case "handoff":
       tag = "files";
       text = step.files.join(", ");
@@ -145,6 +161,9 @@ function WorkLog({
             : loaded
               ? t("chat.log.none")
               : t("common.loading")}
+          {/* Searches are called out separately because nothing else in this
+              line reflects them: they are billed per use, not per token. */}
+          {totals.searches > 0 ? ` · ${t("chat.log.searches", { count: totals.searches })}` : ""}
           {totals.errors > 0 ? ` · ${t("chat.log.errors", { count: totals.errors })}` : ""}
         </span>
         <span style={{ font: "400 12px 'IBM Plex Sans'", color: "var(--tx-faint)", transform: open ? "rotate(90deg)" : "none", transition: "transform .16s" }}>›</span>

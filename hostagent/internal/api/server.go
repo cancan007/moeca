@@ -640,6 +640,10 @@ func (s *Server) Run() error {
 	// Record occurrences the app missed while it was down, then start ticking.
 	s.backfillMissed(time.Now())
 	s.startScheduler()
+	// Chat turns the last run of this process left in flight. Its own goroutine:
+	// it waits for the sandbox controller, which is a sibling still starting up,
+	// and nothing about serving requests depends on the answer.
+	go s.reconcileChatTurns()
 	srv := &http.Server{
 		Addr:              s.cfg.Listen,
 		Handler:           s.Handler(),

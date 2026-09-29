@@ -161,7 +161,9 @@ export const zh: Dict = {
       ragLabel: "知识库",
       ragTip: "一次授予三个工具：rag_search 查找相关片段，read_knowledge_source 读取整篇文档，fetch_knowledge_file 将文件实体下载到 /work（图片最多只索引描述，这是获取实体的唯一方式）。查找与打开属于同一权限，索引器对两者应用相同的分组过滤，因此能检索的智能体也能顺着结果取用。",
       webLabel: "Web 检索 (web_search)",
-      webTip: "赋予 Web 检索（web_search）。检索在模型提供方一侧执行，容器不会外出。每次检索均会计费。",
+      webTip: "授予 Web 检索（web_search）。检索在模型提供方一侧执行，容器不会离开隔离网络，每次检索单独计费。仅 Anthropic 与 OpenAI Responses（astra 等）支持；Chat Completions 与 Gemini 的智能体不会获得该授权",
+      webDialectNote: "该智能体的提供方不支持 Web 检索（仅 Anthropic / OpenAI Responses）。设置会保留，但不会编译进运行",
+      webCapNote: "OpenAI Responses 没有检索上限字段，因此由智能体统计返回结果来施加上限。同一轮内可能略微超出，实际次数记录在工作日志中",
       webMaxUses: "检索上限",
       webMaxUsesPlaceholder: "默认 5",
       media: {
@@ -769,6 +771,13 @@ export const zh: Dict = {
       answered: "生成回答",
       failed: "失败",
       compacted: "已摘要历史 {{before}} → {{after}} 轮",
+      searches: "检索 {{count}} 次",
+      searchLimit: "检索次数已用尽，本次运行不再检索（{{used}}/{{limit}}）",
+      search: {
+        search: "检索：{{q}}",
+        open_page: "打开页面：{{q}}",
+        find_in_page: "页面内检索：{{q}}",
+      },
       status: {
         pending: "等待",
         running: "运行中",

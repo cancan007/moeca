@@ -41,8 +41,11 @@ const minThinkingBudget = 1024
 // the legacy tier only knows the basic one. Same normalization argument as
 // thinking: a stage pinned to an older model should search less well, not 400.
 const (
-	WebSearchTool       = "web_search_20260209"
-	webSearchToolLegacy = "web_search_20250305"
+	WebSearchTool = "web_search_20260209"
+	// WebSearchToolLegacy is the same grant as understood by models before 4.6.
+	// Exported because callers that reason about "is this the search grant" have
+	// to match either id — a stage pinned to an older model still holds a grant.
+	WebSearchToolLegacy = "web_search_20250305"
 )
 
 // isLegacyThinking reports whether model predates adaptive thinking.
@@ -98,7 +101,7 @@ func downgradeServerTools(in []Tool) []Tool {
 			out = make([]Tool, len(in))
 			copy(out, in)
 		}
-		out[i].Type = webSearchToolLegacy
+		out[i].Type = WebSearchToolLegacy
 	}
 	if out == nil {
 		return in

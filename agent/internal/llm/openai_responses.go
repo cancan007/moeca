@@ -83,10 +83,30 @@ type orReasoning struct {
 // parameters sit on the tool itself, where Chat Completions nests them under a
 // "function" object.
 type orTool struct {
-	Type        string         `json:"type"`
-	Name        string         `json:"name"`
+	Type string `json:"type"`
+	// A built-in tool is named by its type alone; only a function carries these.
+	Name        string         `json:"name,omitempty"`
 	Description string         `json:"description,omitempty"`
 	Parameters  map[string]any `json:"parameters,omitempty"`
+	// Filters is web_search's domain restriction. Unlike the Anthropic dialect,
+	// which takes allowed_domains and blocked_domains as separate mutually
+	// exclusive fields, this API nests both under one object.
+	Filters *orWebFilters `json:"filters,omitempty"`
+}
+
+type orWebFilters struct {
+	AllowedDomains []string `json:"allowed_domains,omitempty"`
+	BlockedDomains []string `json:"blocked_domains,omitempty"`
+}
+
+// domainFilters translates the grant's domain restriction, or nil when it names
+// none. The grant already guarantees at most one of the two is set — sending
+// both is a 400 upstream — so this only has to carry whichever it is.
+func domainFilters(t Tool) *orWebFilters {
+	if len(t.AllowedDomains) == 0 && len(t.BlockedDomains) == 0 {
+		return nil
+	}
+	return &orWebFilters{AllowedDomains: t.AllowedDomains, BlockedDomains: t.BlockedDomains}
 }
 
 // orMessage's Content is `any` for the same reason as the Chat Completions
@@ -189,13 +209,22 @@ func (c *openAIResponsesClient) encode(req Request) orRequest {
 
 	var tools []orTool
 	for _, t := range req.Tools {
-		// Provider-executed tools are not translated. This dialect does have a
-		// web_search of its own, but the grant that reaches us carries a
-		// per-run max_uses cap and this API has no field for it: forwarding the
-		// tool would quietly turn a bounded grant into an unbounded one, and
-		// searches are billed per use. Until the cap has somewhere to go, the
-		// honest translation is the same as the Chat Completions one — drop it.
+		// Provider-executed tools are translated where this API has the same
+		// tool. Web search is the one that does.
+		//
+		// Two of the grant's three parts cross cleanly: allowed and blocked
+		// domains become `filters`. The third — max_uses — has no field here at
+		// all, and forwarding the tool without it would turn a bounded grant into
+		// an unbounded one on a tool billed per use. So the cap is enforced by
+		// the agent instead: it counts the web_search_call items that come back
+		// and stops offering the tool once the grant is spent (see the loop).
+		// That is a turn later than a server-side cap would stop, and the run log
+		// says how many searches actually happened, so the difference is visible
+		// rather than assumed.
 		if t.IsServer() {
+			if t.Type == WebSearchTool || t.Type == WebSearchToolLegacy {
+				tools = append(tools, orTool{Type: "web_search", Filters: domainFilters(t)})
+			}
 			continue
 		}
 		tools = append(tools, orTool{

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { cardStyle, sectionTitle, segStyle } from "./ui";
 import { useStore } from "@/store/useStore";
 import { sandbox, type ImagePolicy, type WebSearch } from "@/lib/sandbox";
+import { dialectSearches } from "@/features/delivery/review/compileTemplate";
 import {
   type SoloAgent,
   type StaticTemplate,
@@ -65,6 +66,10 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
   const [role, setRole] = useState(base?.role ?? "");
   const [providerId, setProviderId] = useState(base?.providerId ?? modelProviders[0]?.name ?? "anthropic");
   const provider = modelProviders.find((p) => p.name === providerId) ?? modelProviders[0];
+  // Whether the grant below will reach a run at all. Asked of the same predicate
+  // the compiler uses, so the switch cannot claim something the stage will drop.
+  const dialect = provider?.dialect || "anthropic";
+  const searchesHere = dialectSearches(dialect);
   const modelOptions = provider?.models ?? [];
   const [model, setModel] = useState(base?.model ?? modelOptions[0] ?? "");
   const [ctx, setCtx] = useState(base?.ctx ?? "128k");
@@ -261,6 +266,16 @@ function AgentEditModal({ base, onClose }: { base: SoloAgent | null; onClose: ()
                     style={{ width: 70, background: "var(--bg-deep)", border: "1px solid var(--bd2)", borderRadius: 6, padding: "4px 7px", font: "400 10px 'IBM Plex Mono'", color: "var(--tx2)", outline: "none" }}
                   />
                 </div>
+              )}
+              {web && !searchesHere && (
+                <span style={{ flexBasis: "100%", font: "400 9.5px 'IBM Plex Mono'", color: "#e0a83e", lineHeight: 1.6 }}>
+                  {t("settings.agents.webDialectNote")}
+                </span>
+              )}
+              {web && searchesHere && dialect === "openai-responses" && (
+                <span style={{ flexBasis: "100%", font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)", lineHeight: 1.6 }}>
+                  {t("settings.agents.webCapNote")}
+                </span>
               )}
               {allTools.length === 0 ? (
                 <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)" }}>{t("settings.agents.noTools")}</span>

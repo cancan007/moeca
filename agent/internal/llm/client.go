@@ -31,9 +31,13 @@ import (
 // abandoned here — by the party that can retry — and a "deadline exceeded" in
 // the log has one possible source rather than two.
 //
-// LLM turns are long
-// (thinking + generation), so this is generous.
-const DefaultTimeout = 300 * time.Second
+// It was 300s on the reasoning that an LLM turn is thinking plus generation and
+// five minutes is generous for both. Provider-side web search broke that: the
+// searching happens INSIDE one response, so a turn can spend minutes opening
+// pages before a single header comes back. A real run died at exactly 300s
+// having made eight searches and written a file it then lost. One response is
+// now allowed the quarter of an hour that shape of turn actually takes.
+const DefaultTimeout = 900 * time.Second
 
 // Client talks to the Messages API through the gateway base URL.
 type Client struct {

@@ -31,6 +31,29 @@ const (
 	KindGemini          = "gemini"
 )
 
+// DialectSearches reports whether a dialect can actually perform a provider-side
+// web search.
+//
+// It is one predicate because the answer is needed in two places that must not
+// disagree: the entrypoint, deciding whether to register the tool at all, and
+// the encoder, deciding whether to put it on the request. They did disagree
+// once — the encoder learned the OpenAI Responses tool while the entrypoint
+// still only registered the grant for Anthropic, so the tool was never
+// advertised and the model, quite correctly, behaved as though web search did
+// not exist.
+//
+// Chat Completions and Gemini are absent deliberately: their encoders drop
+// server tools, so registering the grant there would advertise a tool nothing
+// executes.
+func DialectSearches(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "", KindAnthropic, KindOpenAIResponses:
+		return true
+	default:
+		return false
+	}
+}
+
 // Gateway headers the agent sends. SessionHeader authenticates to the gateway;
 // Run/Stage carry orchestration attribution for the monitoring plane. All are
 // scrubbed by the gateway before the upstream call.

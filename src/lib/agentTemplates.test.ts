@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { templateOptions, normalizeRef, buildRunSpec, sinkStageId, DYNAMIC_REF, type TemplateStores } from "./agentTemplates";
+import { templateOptions, normalizeRef, buildRunSpec, compileRef, sinkStageId, DYNAMIC_REF, type TemplateStores } from "./agentTemplates";
+import { dialectSearches } from "@/features/delivery/review/compileTemplate";
 import type { SoloAgent, StaticTemplate } from "./templates";
 import type { RunStage } from "./sandbox";
 
@@ -108,5 +109,49 @@ describe("sinkStageId", () => {
 
   it("has nothing to name for an empty run", () => {
     expect(sinkStageId([])).toBe("");
+  });
+});
+
+// Which dialects can actually perform a provider-side web search. The compiler
+// and the Settings switch ask the same question of the same function, so a grant
+// cannot be offered where the stage would drop it.
+describe("dialectSearches", () => {
+  it("is true where the dialect has the tool", () => {
+    expect(dialectSearches("anthropic")).toBe(true);
+    expect(dialectSearches("openai-responses")).toBe(true);
+    // An unset dialect means Anthropic, which is what the stage compiles to.
+    expect(dialectSearches(undefined)).toBe(true);
+    expect(dialectSearches("")).toBe(true);
+  });
+
+  it("is false where the request would carry a tool nothing executes", () => {
+    expect(dialectSearches("openai")).toBe(false);
+    expect(dialectSearches("gemini")).toBe(false);
+  });
+});
+
+describe("compiling the web search grant", () => {
+  const searcher = (providerId: string): SoloAgent =>
+    ({ ...solo("s", "Searcher"), providerId, web: { maxUses: 3 } }) as SoloAgent;
+  const withProviders = (dialect: string): TemplateStores => ({
+    ...stores(),
+    solos: [searcher("p")],
+    providers: [{ name: "p", kind: "model", dialect, prefix: `/${dialect}/`, upstream: "", allowlist: [], models: [], injectHeaders: {} }],
+  });
+
+  it("carries the grant to a dialect that searches", () => {
+    for (const dialect of ["anthropic", "openai-responses"]) {
+      const compiled = compileRef("solo:s", withProviders(dialect), "find it");
+      expect(compiled?.stages[0].web).toEqual({ maxUses: 3 });
+    }
+  });
+
+  // Compiled honestly rather than hopefully: an agent that cannot search answers
+  // from what it knows instead of appearing to have searched.
+  it("drops it for a dialect that would ignore it", () => {
+    for (const dialect of ["openai", "gemini"]) {
+      const compiled = compileRef("solo:s", withProviders(dialect), "find it");
+      expect(compiled?.stages[0].web).toBeUndefined();
+    }
   });
 });

@@ -161,7 +161,9 @@ export const en: Dict = {
       ragLabel: "Knowledge base",
       ragTip: "One grant, three tools: rag_search finds passages, read_knowledge_source reads a whole document, fetch_knowledge_file downloads the file itself into /work (the only way to obtain a knowledge image, since images are indexed by description at most). Finding a source and opening it are the same permission — the indexer applies the same group filter to both — so an agent that can search can follow what it finds.",
       webLabel: "Web search (web_search)",
-      webTip: "Grant web search (web_search). The search runs on the model provider's side — the container never leaves the island — and each search is billed.",
+      webTip: "Grant web search (web_search). The search runs on the model provider's side — the container never leaves the island — and each search is billed. Available on Anthropic and OpenAI Responses (astra and the like) only; Chat Completions and Gemini agents are not given the grant.",
+      webDialectNote: "This agent's provider cannot perform web search (Anthropic and OpenAI Responses only). The setting is kept, but it is not compiled into a run.",
+      webCapNote: "The OpenAI Responses API has no field for a search cap, so the agent enforces it by counting what came back. It can overshoot slightly within one turn, and the run log carries the real number.",
       webMaxUses: "Search cap",
       webMaxUsesPlaceholder: "Default 5",
       media: {
@@ -769,6 +771,13 @@ export const en: Dict = {
       answered: "wrote the answer",
       failed: "failed",
       compacted: "summarized history {{before}} → {{after}} turns",
+      searches: "{{count}} searches",
+      searchLimit: "the search grant is spent; no more searching in this run ({{used}}/{{limit}})",
+      search: {
+        search: "searched: {{q}}",
+        open_page: "opened: {{q}}",
+        find_in_page: "read: {{q}}",
+      },
       status: {
         pending: "pending",
         running: "running",

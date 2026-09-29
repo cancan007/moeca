@@ -26,6 +26,16 @@ export interface CompileCtx {
   history?: HistorySettings;
 }
 
+
+/** Whether a dialect can actually perform a provider-side web search.
+ *
+ *  Kept as one predicate because the answer is needed twice — here, to decide
+ *  whether to compile the grant, and in Settings, to say why a switch is off. */
+export function dialectSearches(dialect: string | undefined): boolean {
+  const d = dialect || "anthropic";
+  return d === "anthropic" || d === "openai-responses";
+}
+
 /** Compile a single Solo into a one-stage run (used by scheduled Solo runs). */
 export function compileSolo(
   solo: SoloAgent | undefined,
@@ -88,11 +98,16 @@ function stageFromSolo(
     // a stage carries one list of tools rather than a list plus a media block
     // that only one vendor's API shape fitted.
     tools,
-    // Web search only exists in the Anthropic dialect. Compiling the grant onto
-    // an OpenAI or Gemini stage would put a tool in the run spec that neither
-    // side executes, so the stage is compiled honestly: no grant, and the agent
-    // answers from what it knows instead of appearing to have searched.
-    web: solo.web && (provider.dialect || "anthropic") === "anthropic" ? solo.web : undefined,
+    // Web search reaches the dialects that have it. Anthropic takes the grant
+    // whole — including its per-run cap — and the OpenAI Responses API takes the
+    // tool and the domain filters but has no field for the cap, so the agent
+    // counts the searches that come back and withdraws the tool when the grant
+    // is spent (agent/internal/agent/loop.go).
+    //
+    // Chat Completions and Gemini are still left out, and the stage is compiled
+    // honestly rather than hopefully: no grant, so the agent answers from what
+    // it knows instead of appearing to have searched.
+    web: solo.web && dialectSearches(provider.dialect) ? solo.web : undefined,
   };
 }
 

@@ -129,6 +129,18 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 		{Role: "user", Content: []llm.Block{llm.TextBlock(r.cfg.Task)}},
 	}
 	toolDefs := r.cfg.Tools.Definitions()
+	// The web search grant, read off the compiled tool list rather than passed in
+	// separately: the registry already decided whether search was granted and
+	// with what cap, and two sources for one number is how they disagree.
+	searchCap := webSearchCap(toolDefs)
+	searchesUsed := 0
+	// The last thing the assistant actually said. A run that dies mid-flight used
+	// to report nothing at all — the error path returned an empty summary — so a
+	// turn that had reasoned for four minutes, written a file and then lost the
+	// connection came back blank, as though it had never spoken. Whatever it had
+	// said by then is a better account of it than silence, and the manifest is
+	// where the caller reads that account from.
+	said := ""
 
 	// lastInput carries the previous turn's real input-token count so compaction
 	// can trigger on measured context growth rather than a guess.
@@ -161,13 +173,17 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 		resp, err := r.cfg.Provider.CreateMessage(ctx, req)
 		if err != nil {
 			r.log.event(logLine{Type: "error", Iteration: i, Message: err.Error()})
-			return "error", "", fmt.Errorf("agent: iteration %d: %w", i, err)
+			return "error", said, fmt.Errorf("agent: iteration %d: %w", i, err)
 		}
 		lastInput = resp.Usage.InputTokens
 		// A turn that ran code on the provider's side leaves a container behind;
 		// the rest of the conversation has to keep naming it.
 		if id := resp.ContainerID(); id != "" {
 			container = id
+		}
+
+		if text := strings.TrimSpace(textOf(resp.Content)); text != "" {
+			said = text
 		}
 
 		toolCalls := collectToolNames(resp.Content)
@@ -179,6 +195,41 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 			ToolCalls:  toolCalls,
 			Usage:      &resp.Usage,
 		})
+
+		// Provider-side searches: counted, logged, and cut off when the grant is
+		// spent.
+		//
+		// Counting is the only account anyone gets of them. The agent does not
+		// run this tool, so it produces no tool_result line of its own, and the
+		// gateway sees one /v1/messages call whether it searched five times or
+		// none — yet each search is billed separately. So the run log says what
+		// happened, and the log is where the chat's work view reads it from.
+		//
+		// The cut-off matters in one dialect and is belt-and-braces in the other:
+		// Anthropic is told max_uses and enforces it, the OpenAI Responses API
+		// has no such field, so dropping the tool here is what keeps the grant
+		// bounded there. It takes effect on the NEXT request, so the provider can
+		// overshoot within one turn — which is why the log carries the real count
+		// rather than an assumed one.
+		if uses := llm.WebSearchUses(resp.Content); len(uses) > 0 {
+			searchesUsed += len(uses)
+			for _, u := range uses {
+				r.log.event(logLine{
+					Type: "web_search", Iteration: i, Tool: u.Action,
+					Message: u.Query, Count: searchesUsed, Limit: searchCap,
+				})
+			}
+			if searchCap > 0 && searchesUsed >= searchCap {
+				if dropped, did := dropWebSearch(toolDefs); did {
+					toolDefs = dropped
+					r.log.event(logLine{
+						Type: "web_search_exhausted", Iteration: i,
+						Count: searchesUsed, Limit: searchCap,
+						Message: "the web search grant is spent; the tool is withdrawn for the rest of this run",
+					})
+				}
+			}
+		}
 
 		switch resp.StopReason {
 		case "end_turn":
@@ -285,4 +336,32 @@ func collectToolNames(content []llm.Block) []string {
 		}
 	}
 	return names
+}
+
+// webSearchCap reports the granted number of provider-side searches, or 0 when
+// search was not granted at all. The registry has already applied its default,
+// so whatever is on the definition is the number that was agreed.
+func webSearchCap(defs []llm.Tool) int {
+	for _, t := range defs {
+		if t.Type == llm.WebSearchTool || t.Type == llm.WebSearchToolLegacy {
+			return t.MaxUses
+		}
+	}
+	return 0
+}
+
+// dropWebSearch returns the tool list without the web search grant. The bool
+// reports whether anything was removed, so a spent grant is announced once
+// rather than on every turn after it.
+func dropWebSearch(defs []llm.Tool) ([]llm.Tool, bool) {
+	out := make([]llm.Tool, 0, len(defs))
+	removed := false
+	for _, t := range defs {
+		if t.Type == llm.WebSearchTool || t.Type == llm.WebSearchToolLegacy {
+			removed = true
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, removed
 }

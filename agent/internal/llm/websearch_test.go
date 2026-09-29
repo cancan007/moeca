@@ -58,8 +58,8 @@ func TestNormalizeDowngradesWebSearchOnLegacyModels(t *testing.T) {
 	}
 	got := normalize(Request{Model: "claude-haiku-4-5-20251001", MaxTokens: 16000, Tools: in})
 
-	if got.Tools[1].Type != webSearchToolLegacy {
-		t.Errorf("web_search type = %q, want %q", got.Tools[1].Type, webSearchToolLegacy)
+	if got.Tools[1].Type != WebSearchToolLegacy {
+		t.Errorf("web_search type = %q, want %q", got.Tools[1].Type, WebSearchToolLegacy)
 	}
 	// The caller builds tool definitions once and reuses them every turn, so
 	// normalize must not have patched the original.

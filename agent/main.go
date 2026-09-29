@@ -156,18 +156,21 @@ func run() error {
 		reg.SetMedia(envOr("ORCHESTRA_GATEWAY", strings.TrimSuffix(baseURL, "/anthropic")), gctx, cfg)
 	}
 	// Optional web search. Unlike every other tool, the agent does not run this
-	// one — Anthropic performs the search and returns the results in the same
-	// response — so it needs no gateway route and gives the container no egress.
-	// It exists only in the Anthropic dialect: granting it to an OpenAI or
-	// Gemini stage would advertise a tool nothing on either side executes.
-	if raw := os.Getenv("ORCHESTRA_WEB_SEARCH"); raw != "" {
-		cfg, on, err := parseWebSearch(raw)
-		if err != nil {
-			return err
-		}
-		if on && strings.EqualFold(provider, llm.KindAnthropic) {
-			reg.SetWebSearch(cfg)
-		}
+	// one — the model provider performs the search and returns the results in the
+	// same response — so it needs no gateway route and gives the container no
+	// egress.
+	//
+	// Whether the dialect can do it at all is asked of llm.DialectSearches, the
+	// same predicate the encoder uses. Two copies of that answer is exactly how
+	// this broke once: the encoder learned the OpenAI Responses tool while this
+	// line still said Anthropic, so the tool was never registered and the model
+	// searched with whatever else it had.
+	cfg, searching, err := webSearchGrant(os.Getenv("ORCHESTRA_WEB_SEARCH"), provider)
+	if err != nil {
+		return err
+	}
+	if searching {
+		reg.SetWebSearch(cfg)
 	}
 
 	runner := agent.NewRunner(agent.Config{
@@ -205,6 +208,23 @@ func loadTask(workdir string) (string, error) {
 		return "", fmt.Errorf("read task file %s: %w", path, err)
 	}
 	return string(b), nil
+}
+
+// webSearchGrant decides whether this run gets the web search tool: the grant has
+// to be switched on AND the dialect has to be able to perform it.
+//
+// It is a function rather than two conditions inline so the decision can be
+// tested. The one time it was wrong, nothing failed and nothing was logged —
+// the tool was simply never advertised, and the model used whatever else it had.
+func webSearchGrant(raw, provider string) (tools.WebSearchConfig, bool, error) {
+	if strings.TrimSpace(raw) == "" {
+		return tools.WebSearchConfig{}, false, nil
+	}
+	cfg, on, err := parseWebSearch(raw)
+	if err != nil {
+		return cfg, false, err
+	}
+	return cfg, on && llm.DialectSearches(provider), nil
 }
 
 // parseWebSearch reads the ORCHESTRA_WEB_SEARCH grant. It accepts both a plain

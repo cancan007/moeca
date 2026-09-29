@@ -164,7 +164,9 @@ export const ja = {
       ragLabel: "ナレッジベース",
       ragTip: "1つの付与で3つのツール: rag_search が該当箇所を探し、read_knowledge_source が文書全体を読み、fetch_knowledge_file がファイル実体を /work に落とす（画像は説明までしか索引されないため、実体を得る唯一の手段）。見つけることと開くことは同じ権限で、indexer は両方に同じグループフィルタを適用します。検索できるエージェントは、見つけたものを辿れます。",
       webLabel: "Web 検索 (web_search)",
-      webTip: "Web 検索（web_search）を付与。検索はモデルプロバイダ側で実行され、コンテナは外に出ません。1 検索ごとに課金されます",
+      webTip: "Web 検索（web_search）を付与。検索はモデルプロバイダ側で実行され、コンテナは外に出ません。1 検索ごとに課金されます。対応は Anthropic と OpenAI Responses（astra 等）のみで、Chat Completions と Gemini のエージェントには付与されません",
+      webDialectNote: "このエージェントのプロバイダは web 検索に対応していません（Anthropic / OpenAI Responses のみ）。設定は保存されますが、ランには渡りません",
+      webCapNote: "OpenAI Responses には検索上限のフィールドが無いため、上限はエージェント側が回数を数えて適用します。1 ターン内で少し超えることがあり、実際の回数は作業ログに出ます",
       webMaxUses: "検索上限",
       webMaxUsesPlaceholder: "既定 5",
       media: {
@@ -772,6 +774,13 @@ export const ja = {
       answered: "回答を生成",
       failed: "失敗",
       compacted: "履歴を要約 {{before}} → {{after}} ターン",
+      searches: "検索 {{count}} 回",
+      searchLimit: "検索の上限に達したため、このラン以降は検索できません（{{used}}/{{limit}}）",
+      search: {
+        search: "検索: {{q}}",
+        open_page: "ページを開く: {{q}}",
+        find_in_page: "ページ内を検索: {{q}}",
+      },
       status: {
         pending: "待機",
         running: "実行中",

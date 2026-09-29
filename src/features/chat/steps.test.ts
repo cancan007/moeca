@@ -105,7 +105,44 @@ describe("stepTotals", () => {
       { kind: "tool", name: "b", error: true },
       { kind: "error", message: "boom" },
     ];
-    expect(stepTotals(steps)).toEqual({ tools: 2, tokens: 1200, errors: 2 });
+    expect(stepTotals(steps)).toEqual({ tools: 2, tokens: 1200, errors: 2, searches: 0 });
+  });
+
+  // Searches are counted apart from tool calls because they are billed apart
+  // from tokens: nothing else in the header reflects them.
+  it("counts provider-side searches on their own", () => {
+    const steps: Step[] = [
+      { kind: "search", action: "search", query: "backoff", used: 1, limit: 5 },
+      { kind: "search", action: "open_page", query: "https://go.dev", used: 2, limit: 5 },
+      { kind: "tool", name: "read_file", error: false },
+    ];
+    const totals = stepTotals(steps);
+    expect(totals.searches).toBe(2);
+    expect(totals.tools).toBe(1);
+  });
+});
+
+describe("web search steps", () => {
+  it("reads a search, its query and how much of the grant is spent", () => {
+    const steps = parseStageLog(line({
+      type: "web_search", iteration: 1, tool: "search",
+      message: "exponential backoff", count: 2, limit: 5,
+    }));
+    expect(steps[0]).toEqual({ kind: "search", action: "search", query: "exponential backoff", used: 2, limit: 5 });
+  });
+
+  // One OpenAI grant covers searching, opening a page and reading it; the action
+  // is kept so the log can say which happened.
+  it("keeps the action a search actually took", () => {
+    const steps = parseStageLog(line({
+      type: "web_search", tool: "open_page", message: "https://go.dev/blog/retry", count: 3, limit: 5,
+    }));
+    expect(steps[0]).toMatchObject({ kind: "search", action: "open_page" });
+  });
+
+  it("reports a spent grant as its own step", () => {
+    const steps = parseStageLog(line({ type: "web_search_exhausted", count: 5, limit: 5 }));
+    expect(steps[0]).toEqual({ kind: "searchLimit", used: 5, limit: 5 });
   });
 });
 
