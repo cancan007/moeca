@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { chat } from "@/lib/chat";
 import { formatSize } from "@/features/daily/ArtifactGallery";
@@ -51,9 +51,14 @@ interface Region {
 function Annotator({
   children,
   onReady,
+  style,
 }: {
   children: React.ReactNode;
   onReady: (r: Region) => void;
+  /** Extra sizing. In full screen the box hugs the picture rather than filling
+   *  the window: the region a person marks is reported as a percentage OF THE
+   *  PICTURE, so a letterboxed box would quietly shift every coordinate. */
+  style?: CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [from, setFrom] = useState<{ x: number; y: number } | null>(null);
@@ -92,7 +97,7 @@ function Annotator({
         setRect(region);
         onReady(region);
       }}
-      style={{ position: "relative", cursor: "crosshair", userSelect: "none", overflow: "hidden", borderRadius: 12 }}
+      style={{ position: "relative", cursor: "crosshair", userSelect: "none", overflow: "hidden", borderRadius: 12, ...style }}
     >
       {children}
       {rect && (
@@ -109,6 +114,119 @@ function Annotator({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The file itself, at whatever size it has been given.
+ *
+ * Extracted so the panel and the full-screen view are the same preview rather
+ * than two that have to be kept in step — the second one always ends up a
+ * version behind. `full` only changes how each kind is SIZED: fill the room, or
+ * keep the height that suits a 340px column.
+ */
+function Media({
+  file, src, doc, text, format, svg, full, videoRef, onRegion, onMark, loadingLabel, noPreviewLabel,
+}: {
+  file: Artifact;
+  src: string;
+  doc: string | null;
+  text: string | null;
+  format: Format;
+  svg: boolean;
+  full: boolean;
+  videoRef: React.RefObject<HTMLVideoElement>;
+  onRegion: (r: Region) => void;
+  onMark: (t: number | null) => void;
+  loadingLabel: string;
+  noPreviewLabel: string;
+}) {
+  // Fill the room in full screen; keep a fixed height when windowed. Basis 0 so
+  // a long document scrolls inside the frame instead of pushing it past the edge.
+  const grow: CSSProperties = full ? { flex: "1 1 0", minHeight: 0 } : {};
+
+  if (file.kind === "image") {
+    return (
+      <Annotator
+        onReady={onRegion}
+        style={
+          !full
+            ? undefined
+            : svg
+              // A drawing scales, so its frame takes the room.
+              ? { flex: "1 1 0", minHeight: 0, width: "100%" }
+              // A bitmap does not: the box hugs the picture so a marked region is
+              // still a percentage of the image and not of the letterboxing.
+              : { maxWidth: "100%", maxHeight: "100%", width: "fit-content", height: "fit-content", margin: "auto" }
+        }
+      >
+        {svg ? (
+          // pointer-events off so the drag lands on the annotator above it: the
+          // picture is static, nothing inside it wants a click.
+          <iframe
+            title={file.name}
+            srcDoc={doc ?? ""}
+            sandbox=""
+            style={{ display: "block", width: "100%", height: full ? "100%" : 260, border: 0, pointerEvents: "none", background: "var(--bg-deep)" }}
+          />
+        ) : (
+          <img
+            src={src}
+            alt={file.name}
+            style={full
+              ? { display: "block", maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }
+              : { display: "block", width: "100%", background: "var(--bg-deep)" }}
+          />
+        )}
+      </Annotator>
+    );
+  }
+
+  if (file.kind === "video") {
+    return (
+      <div style={{ position: "relative", ...(full ? { flex: "1 1 0", minHeight: 0, display: "flex" } : {}) }}>
+        <video
+          ref={videoRef}
+          src={src}
+          controls
+          style={{ display: "block", width: "100%", borderRadius: 12, background: "#050608", ...(full ? { maxHeight: "100%", objectFit: "contain" } : {}) }}
+        />
+        {/* The overlay stops short of the control strip so the player stays
+            usable while a region can still be marked on the frame. */}
+        <div style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 44 }}>
+          <Annotator onReady={(r) => { onRegion(r); onMark(videoRef.current?.currentTime ?? null); }}>
+            <div style={{ width: "100%", height: "100%" }} />
+          </Annotator>
+        </div>
+      </div>
+    );
+  }
+
+  if (file.kind === "audio") return <audio src={src} controls style={{ width: "100%" }} />;
+
+  if (file.kind === "pdf") {
+    return <iframe title={file.name} src={src} style={{ width: "100%", height: full ? "auto" : 520, border: 0, borderRadius: 12, background: "#fff", ...grow }} />;
+  }
+
+  if (file.kind === "text") {
+    return format === "plain" ? (
+      <pre style={{ margin: 0, overflow: "auto", font: "400 11.5px/1.6 'IBM Plex Mono'", color: "var(--tx2)", whiteSpace: "pre-wrap", wordBreak: "break-word", ...grow }}>
+        {text ?? loadingLabel}
+      </pre>
+    ) : (
+      <iframe
+        title={file.name}
+        srcDoc={doc ?? ""}
+        sandbox=""
+        style={{ width: "100%", height: full ? "auto" : 520, border: 0, borderRadius: 12, display: "block", background: format === "html" ? "#fff" : "var(--bg-deep)", ...grow }}
+      />
+    );
+  }
+
+  return (
+    <span style={{ font: "400 11.5px 'IBM Plex Sans'", color: "var(--tx-dim)", padding: "24px 0", textAlign: "center" }}>
+      {noPreviewLabel}
+    </span>
   );
 }
 
@@ -147,11 +265,28 @@ export function ChatPanel({
   const [note, setNote] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const [mark, setMark] = useState<number | null>(null);
+  const [full, setFull] = useState(false);
 
   const src = conversationId && file ? chat.artifactUrl(conversationId, file.path) : "";
   const format = file ? formatOf(file.name) : "plain";
 
   useEffect(() => { setText(null); setRegion(null); setNote(""); setMark(null); }, [file?.path]);
+
+  // Nothing to show full screen once the file is closed or the panel is put away.
+  useEffect(() => { if (!file || !open) setFull(false); }, [file, open]);
+
+  // Escape leaves full screen. There is no backdrop to click out of, so without
+  // this the only way back is the one button.
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      setFull(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
 
   const svg = !!file && isSvgName(file.name);
 
@@ -191,7 +326,43 @@ export function ChatPanel({
     setNote("");
     setRegion(null);
     setMark(null);
+    // The quote lands in the composer, which is behind the full-screen view —
+    // leaving it up would hide the thing the button just did.
+    setFull(false);
   };
+
+  /** Marking a region and commenting on it. Rendered wherever the picture is —
+   *  the panel or the full-screen view — so the comment box follows the image
+   *  rather than being stranded behind it. */
+  const annotation = file && (file.kind === "image" || file.kind === "video") ? (
+                region ? (
+                  <div style={{ animation: "ocRise .18s cubic-bezier(.2,.8,.2,1) both", display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-card)", borderRadius: 12, padding: "10px 11px" }}>
+                    <span style={{ font: "500 10px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>
+                      {regionLabel(region)}
+                      {mark != null && ` · ${Math.floor(mark / 60)}:${String(Math.floor(mark % 60)).padStart(2, "0")}`}
+                    </span>
+                    <textarea
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitNote(); } }}
+                      placeholder={t("chat.panel.commentPlaceholder")}
+                      rows={2}
+                      style={{ resize: "none", background: "var(--bg-deep)", border: "none", outline: "none", borderRadius: 9, padding: "8px 10px", font: "400 12px 'IBM Plex Sans'", color: "var(--tx)", lineHeight: 1.6, fontFamily: "'IBM Plex Sans', sans-serif" }}
+                    />
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                      <div onClick={() => { setRegion(null); setNote(""); }} style={{ font: "500 11px 'IBM Plex Sans'", color: "var(--tx-dim)", padding: "5px 10px", borderRadius: 14, cursor: "pointer" }}>
+                        {t("chat.panel.cancel")}
+                      </div>
+                      <div onClick={submitNote} style={{ display: "flex", alignItems: "center", gap: 6, font: "600 11px 'IBM Plex Sans'", color: "var(--tx)", background: "var(--bg-card2)", padding: "5px 12px", borderRadius: 14, cursor: "pointer" }}>
+                        <ReplyIcon color="currentColor" />
+                        {t("chat.panel.reply")}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <span style={{ font: "400 10px 'IBM Plex Sans'", color: "var(--tx-faint)" }}>{t("chat.panel.annotateHint")}</span>
+                )
+  ) : null;
 
   // The panel stays mounted and collapses to zero width, rather than being
   // unmounted: an element that is not there cannot animate, and swapping it in
@@ -284,6 +455,13 @@ export function ChatPanel({
                   works on a repository worktree, and a conversation's directory is
                   not one. Offering a button that cannot open the file would be
                   worse than offering the one that always works. */}
+              <div
+                onClick={() => setFull(true)}
+                title={t("daily.fullscreen")}
+                style={{ ...iconButton(), width: 26, height: 26, background: "var(--bg-card)", color: "var(--tx3)", font: "400 12px 'IBM Plex Sans'" }}
+              >
+                ⤢
+              </div>
               <a
                 href={conversationId ? chat.artifactUrl(conversationId, file.path, true) : "#"}
                 download={file.name}
@@ -299,94 +477,14 @@ export function ChatPanel({
             </div>
 
             <div style={{ animation: "ocRise .2s cubic-bezier(.2,.8,.2,1) both", flex: 1, overflowY: "auto", padding: "10px 18px 20px", display: "flex", flexDirection: "column", gap: 9 }}>
-              {file.kind === "image" && (
-                <Annotator onReady={setRegion}>
-                  {svg ? (
-                    // pointer-events off so the drag lands on the annotator above
-                    // it: the picture is static, nothing inside it wants a click.
-                    <iframe
-                      title={file.name}
-                      srcDoc={doc ?? ""}
-                      sandbox=""
-                      style={{ display: "block", width: "100%", height: 260, border: 0, pointerEvents: "none", background: "var(--bg-deep)" }}
-                    />
-                  ) : (
-                    <img src={src} alt={file.name} style={{ display: "block", width: "100%", background: "var(--bg-deep)" }} />
-                  )}
-                </Annotator>
-              )}
+              <Media
+                file={file} src={src} doc={doc} text={text} format={format} svg={svg}
+                full={false} videoRef={videoRef}
+                onRegion={setRegion} onMark={setMark}
+                loadingLabel={t("common.loading")} noPreviewLabel={t("daily.noPreview")}
+              />
 
-              {file.kind === "video" && (
-                <div style={{ position: "relative" }}>
-                  <video ref={videoRef} src={src} controls style={{ display: "block", width: "100%", borderRadius: 12, background: "#050608" }} />
-                  {/* The overlay stops short of the control strip so the player
-                      stays usable while a region can still be marked on the frame. */}
-                  <div style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 44 }}>
-                    <Annotator
-                      onReady={(r) => { setRegion(r); setMark(videoRef.current?.currentTime ?? null); }}
-                    >
-                      <div style={{ width: "100%", height: "100%" }} />
-                    </Annotator>
-                  </div>
-                </div>
-              )}
-
-              {file.kind === "audio" && <audio src={src} controls style={{ width: "100%" }} />}
-
-              {file.kind === "pdf" && (
-                <iframe title={file.name} src={src} style={{ width: "100%", height: 520, border: 0, borderRadius: 12, background: "#fff" }} />
-              )}
-
-              {file.kind === "text" && (
-                format === "plain" ? (
-                  <pre style={{ margin: 0, overflow: "auto", font: "400 11.5px/1.6 'IBM Plex Mono'", color: "var(--tx2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                    {text ?? t("common.loading")}
-                  </pre>
-                ) : (
-                  <iframe
-                    title={file.name}
-                    srcDoc={doc ?? ""}
-                    sandbox=""
-                    style={{ width: "100%", height: 520, border: 0, borderRadius: 12, display: "block", background: format === "html" ? "#fff" : "var(--bg-deep)" }}
-                  />
-                )
-              )}
-
-              {file.kind === "file" && (
-                <span style={{ font: "400 11.5px 'IBM Plex Sans'", color: "var(--tx-dim)", padding: "24px 0", textAlign: "center" }}>
-                  {t("daily.noPreview")}
-                </span>
-              )}
-
-              {(file.kind === "image" || file.kind === "video") && (
-                region ? (
-                  <div style={{ animation: "ocRise .18s cubic-bezier(.2,.8,.2,1) both", display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-card)", borderRadius: 12, padding: "10px 11px" }}>
-                    <span style={{ font: "500 10px 'IBM Plex Mono'", color: "var(--tx-dim)" }}>
-                      {regionLabel(region)}
-                      {mark != null && ` · ${Math.floor(mark / 60)}:${String(Math.floor(mark % 60)).padStart(2, "0")}`}
-                    </span>
-                    <textarea
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitNote(); } }}
-                      placeholder={t("chat.panel.commentPlaceholder")}
-                      rows={2}
-                      style={{ resize: "none", background: "var(--bg-deep)", border: "none", outline: "none", borderRadius: 9, padding: "8px 10px", font: "400 12px 'IBM Plex Sans'", color: "var(--tx)", lineHeight: 1.6, fontFamily: "'IBM Plex Sans', sans-serif" }}
-                    />
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
-                      <div onClick={() => { setRegion(null); setNote(""); }} style={{ font: "500 11px 'IBM Plex Sans'", color: "var(--tx-dim)", padding: "5px 10px", borderRadius: 14, cursor: "pointer" }}>
-                        {t("chat.panel.cancel")}
-                      </div>
-                      <div onClick={submitNote} style={{ display: "flex", alignItems: "center", gap: 6, font: "600 11px 'IBM Plex Sans'", color: "var(--tx)", background: "var(--bg-card2)", padding: "5px 12px", borderRadius: 14, cursor: "pointer" }}>
-                        <ReplyIcon color="currentColor" />
-                        {t("chat.panel.reply")}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <span style={{ font: "400 10px 'IBM Plex Sans'", color: "var(--tx-faint)" }}>{t("chat.panel.annotateHint")}</span>
-                )
-              )}
+              {annotation}
 
               {file.kind === "text" && (
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -403,6 +501,59 @@ export function ChatPanel({
           </>
         )}
       </div>
+      {/* Full screen.
+        *
+        * A 340px column is enough to tell what a file is and not enough to read
+        * a report or look at a chart, so the preview can take the window. It is
+        * It covers the screen rather than widening the panel: a wider panel would
+        * squeeze the conversation, and what is wanted here is the picture, not a
+        * different column layout. Positioned against the screen root (the nearest
+        * positioned ancestor), so it stops below the top nav — the same area
+        * Daily's own full-screen preview covers. Escape or either button comes
+        * back. */}
+      {full && file && (
+        <div
+          style={{
+            position: "absolute", inset: 0, zIndex: 70, background: "var(--bg-app)",
+            display: "flex", flexDirection: "column", animation: "ocFade .16s ease-out both",
+          }}
+        >
+          <div style={{ flex: "none", height: 52, display: "flex", alignItems: "center", gap: 10, padding: "0 16px", borderBottom: "1px solid var(--bd)" }}>
+            <ExtBadge name={file.name} kind={file.kind} size={26} />
+            <span style={{ font: "600 12.5px 'IBM Plex Sans'", color: "var(--tx)", flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {file.name}
+            </span>
+            <span style={{ font: "400 9.5px 'IBM Plex Mono'", color: "var(--tx-faint)", flex: "0 100 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {file.path} · {formatSize(file.size)}
+            </span>
+            <div style={{ flex: 1 }} />
+            <a
+              href={conversationId ? chat.artifactUrl(conversationId, file.path, true) : "#"}
+              download={file.name}
+              style={{ font: "600 10px 'IBM Plex Sans'", color: "var(--tx3)", background: "var(--bg-card)", padding: "5px 10px", borderRadius: 14, cursor: "pointer", textDecoration: "none" }}
+            >
+              {t("chat.panel.download")}
+            </a>
+            <div
+              onClick={() => setFull(false)}
+              title={t("daily.shrink")}
+              style={{ ...iconButton(), width: 26, height: 26, background: "var(--bg-card)", color: "var(--tx3)", font: "400 12px 'IBM Plex Sans'" }}
+            >
+              ⤡
+            </div>
+            <div onClick={() => setFull(false)} style={{ ...iconButton(), font: "400 14px 'IBM Plex Sans'" }}>✕</div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10, padding: 18 }}>
+            <Media
+              file={file} src={src} doc={doc} text={text} format={format} svg={svg}
+              full videoRef={videoRef}
+              onRegion={setRegion} onMark={setMark}
+              loadingLabel={t("common.loading")} noPreviewLabel={t("daily.noPreview")}
+            />
+            {annotation}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
