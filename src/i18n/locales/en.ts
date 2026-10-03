@@ -772,6 +772,7 @@ export const en: Dict = {
       failed: "failed",
       compacted: "summarized history {{before}} → {{after}} turns",
       searches: "{{count}} searches",
+      searchImages: "{{count}} images",
       searchLimit: "the search grant is spent; no more searching in this run ({{used}}/{{limit}})",
       search: {
         search: "searched: {{q}}",

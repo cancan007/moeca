@@ -27,7 +27,7 @@ export type Step =
   /** One provider-side web search. The agent does not run this tool — the model
    *  provider does — so counting what came back is the only account of it there
    *  is, and each one is billed separately from the tokens. */
-  | { kind: "search"; action: string; query: string; used: number; limit: number }
+  | { kind: "search"; action: string; query: string; used: number; limit: number; images: number }
   /** The search grant was spent and the tool withdrawn for the rest of the run. */
   | { kind: "searchLimit"; used: number; limit: number }
   /** What the stage published for whatever came after it. */
@@ -51,6 +51,7 @@ interface RawLine {
   tokens?: number;
   count?: number;
   limit?: number;
+  images?: number;
   usage?: { inputTokens?: number; outputTokens?: number; input_tokens?: number; output_tokens?: number };
 }
 
@@ -104,6 +105,7 @@ export function parseStageLog(log: string): Step[] {
           query: l.message ?? "",
           used: l.count ?? 0,
           limit: l.limit ?? 0,
+          images: l.images ?? 0,
         });
         break;
       case "web_search_exhausted":

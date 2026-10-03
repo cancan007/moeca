@@ -68,6 +68,13 @@ type WebSearchUse struct {
 	Action string
 	// Query is the search terms, when the provider reports them.
 	Query string
+	// Images is how many pictures the search brought back.
+	//
+	// Worth counting on its own. The retrieval happens on the provider's side, so
+	// nothing of it passes the gateway and the access log cannot show it; the
+	// only place a picture entering the conversation can be noticed is here. Each
+	// one is also paid for in tokens when the model looks at it.
+	Images int
 }
 
 // WebSearchUses lists the provider-side searches in one response.
@@ -86,10 +93,35 @@ func WebSearchUses(content []Block) []WebSearchUse {
 		case b.Type == BlockServerToolUse && b.ServerToolName() == "web_search":
 			out = append(out, WebSearchUse{Action: "search", Query: rawQuery(b.Raw)})
 		case b.Type == WebSearchCallBlock:
-			out = append(out, WebSearchUse{Action: webSearchAction(b.Raw), Query: rawQuery(b.Raw)})
+			out = append(out, WebSearchUse{
+				Action: webSearchAction(b.Raw),
+				Query:  rawQuery(b.Raw),
+				Images: imageResults(b.Raw),
+			})
 		}
 	}
 	return out
+}
+
+// imageResults counts the pictures in a web_search_call item. They arrive in the
+// item's own `results` array rather than in the assistant's message, so this is
+// the one place they can be seen from.
+func imageResults(raw []byte) int {
+	var t struct {
+		Results []struct {
+			ImageURL string `json:"image_url"`
+		} `json:"results"`
+	}
+	if json.Unmarshal(raw, &t) != nil {
+		return 0
+	}
+	n := 0
+	for _, r := range t.Results {
+		if r.ImageURL != "" {
+			n++
+		}
+	}
+	return n
 }
 
 // webSearchAction reads action.type from an OpenAI web_search_call item:

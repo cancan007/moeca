@@ -775,6 +775,7 @@ export const ja = {
       failed: "失敗",
       compacted: "履歴を要約 {{before}} → {{after}} ターン",
       searches: "検索 {{count}} 回",
+      searchImages: "画像 {{count}} 件",
       searchLimit: "検索の上限に達したため、このラン以降は検索できません（{{used}}/{{limit}}）",
       search: {
         search: "検索: {{q}}",

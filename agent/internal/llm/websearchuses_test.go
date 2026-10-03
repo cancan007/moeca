@@ -88,3 +88,36 @@ func TestWebSearchUsesOnAnOrdinaryTurn(t *testing.T) {
 		t.Errorf("uses = %#v, want none", uses)
 	}
 }
+
+// Image results arrive in the web_search_call item's own `results` array rather
+// than in the assistant's message, so counting them here is the only record that
+// a picture entered the conversation: the retrieval happened on the provider's
+// side and passed no gateway.
+func TestWebSearchUsesCountsImageResults(t *testing.T) {
+	withImages := block(t, map[string]any{
+		"type":   "web_search_call",
+		"action": map[string]any{"type": "search", "query": "conceptual diagram"},
+		"results": []any{
+			map[string]any{"image_url": "https://example.com/a.png", "caption": "a"},
+			map[string]any{"image_url": "https://example.com/b.png"},
+			// A text result in the same array is not a picture.
+			map[string]any{"source_website_url": "https://example.com/article"},
+		},
+	})
+	uses := WebSearchUses([]Block{withImages})
+	if len(uses) != 1 {
+		t.Fatalf("uses = %#v", uses)
+	}
+	if uses[0].Images != 2 {
+		t.Errorf("Images = %d, want 2", uses[0].Images)
+	}
+}
+
+func TestWebSearchUsesWithoutImages(t *testing.T) {
+	plain := block(t, map[string]any{
+		"type": "web_search_call", "action": map[string]any{"type": "search", "query": "x"},
+	})
+	if uses := WebSearchUses([]Block{plain}); uses[0].Images != 0 {
+		t.Errorf("Images = %d, want 0", uses[0].Images)
+	}
+}

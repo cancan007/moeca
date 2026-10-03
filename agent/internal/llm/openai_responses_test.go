@@ -336,3 +336,83 @@ func TestResponsesTruncationMapsToMaxTokens(t *testing.T) {
 		t.Fatalf("incomplete_details not decoded: %+v", out)
 	}
 }
+
+// Pictures are asked for explicitly. Without this the search returns prose only,
+// which is how an agent sent to look at a diagram could read every word around it
+// and still not have seen it: the page reader opens a .png and finds no text.
+func TestResponsesWebSearchAsksForImages(t *testing.T) {
+	m := orEncoded(t, Request{
+		Model:     "gpt-6-astra",
+		MaxTokens: 100,
+		Messages:  []Message{{Role: "user", Content: []Block{TextBlock("look at the diagram")}}},
+		Tools:     []Tool{{Name: "web_search", Type: WebSearchTool, MaxUses: 5}},
+	})
+	tools, _ := m["tools"].([]any)
+	tool, _ := tools[0].(map[string]any)
+
+	types, _ := tool["search_content_types"].([]any)
+	if len(types) != 2 {
+		t.Fatalf("search_content_types = %#v, want text and image", tool["search_content_types"])
+	}
+	seen := map[string]bool{}
+	for _, v := range types {
+		s, _ := v.(string)
+		seen[s] = true
+	}
+	if !seen["image"] || !seen["text"] {
+		t.Errorf("search_content_types = %#v, want both", types)
+	}
+
+	// The API has no default for how many pictures come back, and every one the
+	// model looks at is paid for in tokens, so a positive cap is always sent.
+	settings, ok := tool["image_settings"].(map[string]any)
+	if !ok {
+		t.Fatalf("no image_settings on the grant: %#v", tool)
+	}
+	if n, _ := settings["max_results"].(float64); n <= 0 {
+		t.Errorf("max_results = %v, want a positive cap", settings["max_results"])
+	}
+}
+
+// The pictures a search found only come back when the request asks for the
+// results array. Without it every search reports zero images — which is what
+// twenty-one searches in a row did, while the model may well have been looking
+// at pictures the whole time.
+func TestResponsesAsksForSearchResults(t *testing.T) {
+	withSearch := orEncoded(t, Request{
+		Model:        "gpt-6-astra",
+		MaxTokens:    100,
+		Messages:     []Message{{Role: "user", Content: []Block{TextBlock("hi")}}},
+		Tools:        []Tool{{Name: "web_search", Type: WebSearchTool, MaxUses: 5}},
+		OutputConfig: &OutputConfig{Effort: "high"},
+	})
+	if !includes(withSearch, "web_search_call.results") {
+		t.Errorf("include = %#v, want the search results array", withSearch["include"])
+	}
+
+	// Asked for only where a search can happen: naming a tool the request does
+	// not carry is a field asking about something impossible.
+	withoutSearch := orEncoded(t, Request{
+		Model:        "gpt-6-astra",
+		MaxTokens:    100,
+		Messages:     []Message{{Role: "user", Content: []Block{TextBlock("hi")}}},
+		OutputConfig: &OutputConfig{Effort: "high"},
+	})
+	if includes(withoutSearch, "web_search_call.results") {
+		t.Errorf("include = %#v, want no search results on a request with no search", withoutSearch["include"])
+	}
+	// The reasoning state still has to survive either way.
+	if !includes(withoutSearch, "reasoning.encrypted_content") {
+		t.Errorf("include = %#v, want the encrypted reasoning kept", withoutSearch["include"])
+	}
+}
+
+func includes(m map[string]any, want string) bool {
+	list, _ := m["include"].([]any)
+	for _, v := range list {
+		if s, _ := v.(string); s == want {
+			return true
+		}
+	}
+	return false
+}

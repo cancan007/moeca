@@ -217,6 +217,7 @@ func (r *Runner) loop(ctx context.Context) (stopReason, summary string, err erro
 				r.log.event(logLine{
 					Type: "web_search", Iteration: i, Tool: u.Action,
 					Message: u.Query, Count: searchesUsed, Limit: searchCap,
+					Images: u.Images,
 				})
 			}
 			if searchCap > 0 && searchesUsed >= searchCap {

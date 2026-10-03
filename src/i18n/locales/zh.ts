@@ -772,6 +772,7 @@ export const zh: Dict = {
       failed: "失败",
       compacted: "已摘要历史 {{before}} → {{after}} 轮",
       searches: "检索 {{count}} 次",
+      searchImages: "图片 {{count}} 张",
       searchLimit: "检索次数已用尽，本次运行不再检索（{{used}}/{{limit}}）",
       search: {
         search: "检索：{{q}}",

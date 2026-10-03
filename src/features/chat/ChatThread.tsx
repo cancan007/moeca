@@ -84,6 +84,9 @@ function StepRow({ step }: { step: Step }) {
       text = step.query
         ? t(`chat.log.search.${step.action}`, { defaultValue: step.action, q: step.query })
         : t(`chat.log.search.${step.action}`, { defaultValue: step.action, q: "" });
+      // Pictures are called out: they came from the provider's side, so no
+      // gateway saw them, and each one is paid for in tokens.
+      if (step.images > 0) text += ` · ${t("chat.log.searchImages", { count: step.images })}`;
       dur = step.limit > 0 ? `${step.used}/${step.limit}` : String(step.used);
       tone = "#5b9fe8";
       break;

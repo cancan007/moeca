@@ -38,6 +38,10 @@ type logLine struct {
 	// query or URL, so the run log says what was looked up as well as how often.
 	Count int `json:"count,omitempty"`
 	Limit int `json:"limit,omitempty"`
+	// Images is how many pictures one search returned. Counted because the
+	// retrieval happens on the provider's side: it passes no gateway, so this
+	// line is the only place a picture entering the conversation is recorded.
+	Images int `json:"images,omitempty"`
 
 	// compaction accounting (Type == "compaction")
 	Before int `json:"before,omitempty"` // message count before summarizing

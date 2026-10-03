@@ -112,8 +112,8 @@ describe("stepTotals", () => {
   // from tokens: nothing else in the header reflects them.
   it("counts provider-side searches on their own", () => {
     const steps: Step[] = [
-      { kind: "search", action: "search", query: "backoff", used: 1, limit: 5 },
-      { kind: "search", action: "open_page", query: "https://go.dev", used: 2, limit: 5 },
+      { kind: "search", action: "search", query: "backoff", used: 1, limit: 5, images: 0 },
+      { kind: "search", action: "open_page", query: "https://go.dev", used: 2, limit: 5, images: 0 },
       { kind: "tool", name: "read_file", error: false },
     ];
     const totals = stepTotals(steps);
@@ -128,7 +128,7 @@ describe("web search steps", () => {
       type: "web_search", iteration: 1, tool: "search",
       message: "exponential backoff", count: 2, limit: 5,
     }));
-    expect(steps[0]).toEqual({ kind: "search", action: "search", query: "exponential backoff", used: 2, limit: 5 });
+    expect(steps[0]).toEqual({ kind: "search", action: "search", query: "exponential backoff", used: 2, limit: 5, images: 0 });
   });
 
   // One OpenAI grant covers searching, opening a page and reading it; the action
@@ -138,6 +138,15 @@ describe("web search steps", () => {
       type: "web_search", tool: "open_page", message: "https://go.dev/blog/retry", count: 3, limit: 5,
     }));
     expect(steps[0]).toMatchObject({ kind: "search", action: "open_page" });
+  });
+
+  // A search that brought pictures back says so: the retrieval happened on the
+  // provider's side, so no gateway saw it and this is the only record of it.
+  it("carries how many images a search returned", () => {
+    const steps = parseStageLog(line({
+      type: "web_search", tool: "search", message: "conceptual diagram", count: 1, limit: 5, images: 3,
+    }));
+    expect(steps[0]).toMatchObject({ kind: "search", images: 3 });
   });
 
   it("reports a spent grant as its own step", () => {

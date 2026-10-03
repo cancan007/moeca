@@ -80,6 +80,14 @@ func run() error {
 	effort := effortOr(os.Getenv("ORCHESTRA_EFFORT"), defaultEffort)
 	maxTokens := envInt("ORCHESTRA_MAX_TOKENS", 0)
 
+	// The web search grant is read here rather than where the tool is registered,
+	// because the prompt needs it too: an agent that has the tool is told how it
+	// behaves, and one that does not is told nothing about a tool it cannot call.
+	searchCfg, searching, err := webSearchGrant(os.Getenv("ORCHESTRA_WEB_SEARCH"), provider)
+	if err != nil {
+		return err
+	}
+
 	// Compose the system prompt: persona + a consistent environment/guidelines
 	// frame. ORCHESTRA_PROMPT_RAW=1 keeps the persona verbatim (power-user opt-out).
 	system := persona
@@ -90,6 +98,7 @@ func run() error {
 			Provider:   provider,
 			Model:      model,
 			Compaction: maxContext > 0,
+			WebSearch:  searching,
 		})
 	}
 	gctx := llm.GatewayCtx{
@@ -165,12 +174,8 @@ func run() error {
 	// this broke once: the encoder learned the OpenAI Responses tool while this
 	// line still said Anthropic, so the tool was never registered and the model
 	// searched with whatever else it had.
-	cfg, searching, err := webSearchGrant(os.Getenv("ORCHESTRA_WEB_SEARCH"), provider)
-	if err != nil {
-		return err
-	}
 	if searching {
-		reg.SetWebSearch(cfg)
+		reg.SetWebSearch(searchCfg)
 	}
 
 	runner := agent.NewRunner(agent.Config{

@@ -54,6 +54,12 @@ type openAIResponsesClient struct {
 const (
 	orStore          = false
 	orIncludeRsnEncr = "reasoning.encrypted_content"
+	// Without this the web_search_call items come back without their `results`
+	// array, and the pictures a search found are invisible from here — which is
+	// exactly what happened: twenty-one searches, every one of them reported as
+	// returning no images, because nothing had asked for the array that says.
+	// Asking for it is what makes the count mean anything.
+	orIncludeSearchResults = "web_search_call.results"
 )
 
 /* ─── request ─── */
@@ -92,12 +98,35 @@ type orTool struct {
 	// which takes allowed_domains and blocked_domains as separate mutually
 	// exclusive fields, this API nests both under one object.
 	Filters *orWebFilters `json:"filters,omitempty"`
+	// SearchContentTypes opts the search into returning pictures as well as
+	// prose, and ImageSettings bounds how many come back.
+	SearchContentTypes []string         `json:"search_content_types,omitempty"`
+	ImageSettings      *orImageSettings `json:"image_settings,omitempty"`
 }
 
 type orWebFilters struct {
 	AllowedDomains []string `json:"allowed_domains,omitempty"`
 	BlockedDomains []string `json:"blocked_domains,omitempty"`
 }
+
+// orImageSettings bounds the picture half of a search. MaxResults has no default
+// on the API's side — a positive number has to be asked for — and it is worth
+// asking for a small one: every image the model looks at is paid for in tokens,
+// and a search that quietly returned twenty of them would cost more than the
+// answer is worth.
+type orImageSettings struct {
+	MaxResults int  `json:"max_results"`
+	Caption    bool `json:"caption"`
+}
+
+// defaultImageResults is how many pictures one search may return.
+//
+// Three is the number the API's own example uses, and it is enough to look at a
+// diagram someone linked without turning a question into a gallery. It is a
+// constant rather than a setting because the grant already says whether this
+// agent may search at all; how many pictures a search brings back is a cost
+// detail, not a permission.
+const defaultImageResults = 6
 
 // domainFilters translates the grant's domain restriction, or nil when it names
 // none. The grant already guarantees at most one of the two is set — sending
@@ -208,6 +237,7 @@ func (c *openAIResponsesClient) encode(req Request) orRequest {
 	}
 
 	var tools []orTool
+	searching := false
 	for _, t := range req.Tools {
 		// Provider-executed tools are translated where this API has the same
 		// tool. Web search is the one that does.
@@ -223,7 +253,17 @@ func (c *openAIResponsesClient) encode(req Request) orRequest {
 		// rather than assumed.
 		if t.IsServer() {
 			if t.Type == WebSearchTool || t.Type == WebSearchToolLegacy {
-				tools = append(tools, orTool{Type: "web_search", Filters: domainFilters(t)})
+				// Pictures are asked for explicitly. Without this the search
+				// returns prose only, which is why an agent sent to look at a
+				// diagram could read every word around it and still not have seen
+				// it — the page reader opens a .png and finds no text in it.
+				searching = true
+				tools = append(tools, orTool{
+					Type:               "web_search",
+					Filters:            domainFilters(t),
+					SearchContentTypes: []string{"text", "image"},
+					ImageSettings:      &orImageSettings{MaxResults: defaultImageResults, Caption: true},
+				})
 			}
 			continue
 		}
@@ -248,6 +288,12 @@ func (c *openAIResponsesClient) encode(req Request) orRequest {
 				reasoning = &orReasoning{Effort: e}
 			}
 		}
+	}
+	// Ask for what each search actually found, but only when a search was
+	// granted: an include naming a tool the request does not carry is a field
+	// asking about something that cannot happen.
+	if searching {
+		include = append(include, orIncludeSearchResults)
 	}
 
 	return orRequest{
